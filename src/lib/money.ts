@@ -10,14 +10,14 @@ export function formatAmount(amount: number): string {
 }
 
 export function formatIdr(amount: number): string {
-  if (amount < 0) return `−Rp${numberFormatter.format(Math.abs(amount))}`;
-  return `Rp${numberFormatter.format(amount)}`;
+  if (amount < 0) return `−Rp ${numberFormatter.format(Math.abs(amount))}`;
+  return `Rp ${numberFormatter.format(amount)}`;
 }
 
-/** Contoh: +Rp25.000 / −Rp25.000 / Rp0 */
+/** Contoh: +Rp 25.000 / −Rp 25.000 / Rp 0 */
 export function formatIdrSigned(amount: number): string {
-  if (amount > 0) return `+Rp${numberFormatter.format(amount)}`;
-  if (amount < 0) return `−Rp${numberFormatter.format(Math.abs(amount))}`;
+  if (amount > 0) return `+Rp ${numberFormatter.format(amount)}`;
+  if (amount < 0) return `−Rp ${numberFormatter.format(Math.abs(amount))}`;
   return 'Rp 0';
 }
 

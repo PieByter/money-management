@@ -2,20 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { formatAmount, formatIdr, formatIdrCompact, formatIdrSigned, parseAmountInput } from '@/lib/money';
 
 describe('money', () => {
-  it('memformat rupiah dengan pemisah ribuan Indonesia', () => {
+  it('memformat rupiah dengan pemisah ribuan Indonesia dan spasi setelah Rp', () => {
     expect(formatAmount(25000)).toBe('25.000');
-    expect(formatIdr(25000)).toBe('Rp25.000');
-    expect(formatIdr(1234567890)).toBe('Rp1.234.567.890');
+    expect(formatIdr(25000)).toBe('Rp 25.000');
+    expect(formatIdr(0)).toBe('Rp 0');
+    expect(formatIdr(1234567890)).toBe('Rp 1.234.567.890');
   });
 
   it('memberi tanda +/− eksplisit', () => {
-    expect(formatIdrSigned(5000)).toBe('+Rp5.000');
-    expect(formatIdrSigned(-25000)).toBe('−Rp25.000');
-    expect(formatIdrSigned(0)).toBe('Rp0');
+    expect(formatIdrSigned(5000)).toBe('+Rp 5.000');
+    expect(formatIdrSigned(-25000)).toBe('−Rp 25.000');
+    expect(formatIdrSigned(0)).toBe('Rp 0');
   });
 
   it('menangani nominal negatif tanpa tanda ganda', () => {
-    expect(formatIdr(-5000)).toBe('−Rp5.000');
+    expect(formatIdr(-5000)).toBe('−Rp 5.000');
   });
 
   it('format ringkas untuk grafik', () => {

@@ -244,7 +244,7 @@ export function WalletFormDialog({
               />
               {openingText ? (
                 <p className="text-xs text-muted-foreground">
-                  Dicatat sebagai penyesuaian: Rp{formatAmount(Number(openingText))}
+                  Dicatat sebagai penyesuaian: Rp {formatAmount(Number(openingText))}
                 </p>
               ) : null}
             </div>
