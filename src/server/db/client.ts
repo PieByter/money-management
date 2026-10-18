@@ -11,11 +11,25 @@ import * as schema from './schema';
 
 /**
  * Dua mode koneksi:
- * - DATABASE_URL terisi → Postgres/Supabase (produksi).
+ * - DATABASE_URL terisi (bukan placeholder) → Postgres/Supabase (produksi).
  * - Kosong → PGlite embedded di ./.data/pglite (mode lokal tanpa setup).
  * Service layer hanya bergantung pada tipe AppDb, bukan driver-nya.
  */
 export type AppDb = PgDatabase<PgQueryResultHKT, typeof schema>;
+
+/** Abaikan nilai placeholder (<ref>/<region>) agar tidak crash saat query. */
+function resolveDatabaseUrl(): string | null {
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) return null;
+  if (url.includes('<') || url.includes('>')) {
+    console.warn(
+      '[db] DATABASE_URL masih berisi placeholder (<ref>/<region>). ' +
+        'Salin connection string asli dari Supabase → Connect, atau kosongkan untuk memakai PGlite.',
+    );
+    return null;
+  }
+  return url;
+}
 
 function migrationsFolder(): string {
   return path.join(process.cwd(), 'drizzle');
@@ -29,7 +43,7 @@ interface DbHandle {
 const globalForDb = globalThis as unknown as { __moneyDb?: DbHandle };
 
 function createHandle(): DbHandle {
-  const url = process.env.DATABASE_URL;
+  const url = resolveDatabaseUrl();
   if (url) {
     // Supavisor transaction pooler tidak mendukung prepared statements.
     const client = postgres(url, { max: 10, prepare: false });

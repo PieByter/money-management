@@ -54,13 +54,22 @@ Izinkan node.exe saat Windows Firewall bertanya.
 
 ## Mode Supabase (multi-user / produksi)
 
-Isi `.env.local` (contoh di [.env.example](./.env.example)):
+Isi `.env` (atau `.env.local`) — contoh di [.env.example](./.env.example):
 
 ```bash
 DATABASE_URL=postgresql://postgres.<ref>:<password>@<region>.pooler.supabase.com:6543/postgres
 NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...   # atau NEXT_PUBLIC_SUPABASE_ANON_KEY gaya lama
 ```
+
+- **Kunci**: aplikasi menerima kunci `sb_publishable_…` (gaya baru) maupun `anon` key
+  (gaya lama); publishable diprioritaskan.
+- **DATABASE_URL**: pakai **Direct connection** (`db.<ref>.supabase.co:5432`) untuk dev di
+  komputer, atau **Supavisor transaction pooler** (port 6543) untuk deploy Vercel/serverless.
+  Salin persis dari Supabase → **Connect**; nilai yang masih mengandung `<`/`>` (placeholder)
+  akan diabaikan dengan peringatan.
+- Gunakan kunci **secret** (`sb_secret_…`)/service role **hanya** di server dan jangan pernah
+  ditulis dengan awalan `NEXT_PUBLIC_`.
 
 Yang terjadi ketika env terisi:
 
@@ -78,9 +87,24 @@ Terapkan skema ke Supabase (sekali, dari mesin lokal):
 npm run db:migrate
 ```
 
+Skrip CLI (migrate/seed/drizzle-kit) otomatis memuat `.env`/`.env.local`, jadi cukup
+menempelkan `DATABASE_URL` di file env — tidak perlu export manual.
+
 Susun Supabase project: matikan "Confirm email" bila perlu, tambahkan URL redirect
 `https://<domain-kamu>/auth/callback` pada Authentication → URL Configuration, dan aktifkan
 provider Google bila dipakai.
+
+### Jika `npm run db:migrate` gagal
+
+| Gejala | Penyebab & solusi |
+| --- | --- |
+| `password authentication failed for user "postgres"` | Password DB di `DATABASE_URL` salah. Reset di Project Settings → Database → **Reset database password**, lalu salin Connection string terbaru. |
+| `tenant/user postgres.<ref> not found` | Host pooler salah region. Ambil persis dari Supabase → Connect (mis. `aws-0-<region>.pooler.supabase.com`). |
+| `DATABASE_URL masih berisi placeholder` | Ganti `<ref>`/`<region>`/`<password>` dengan nilai asli; selama placeholder, aplikasi memakai PGlite. |
+| IPv6 tidak tersedia (jaringan kantor) | Direct connection butuh IPv6. Pakai **Session/Transaction pooler** (IPv4) untuk dev. |
+
+Untuk uji login dari HP di jaringan lokal, tambahkan juga `http://<IP-komputer>:3000/auth/callback`
+(atau port lain yang dipakai, mis. 3001) ke daftar redirect Supabase.
 
 ## Skrip
 

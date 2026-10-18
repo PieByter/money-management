@@ -13,13 +13,17 @@ import postgres from 'postgres';
 import type { AppDb } from '../src/server/db/client';
 import * as schema from '../src/server/db/schema';
 import { ensureDefaults } from '../src/server/services/defaults';
+import { loadEnvFiles } from './load-env';
+
+loadEnvFiles();
 
 const LOCAL_USER_ID = '00000000-0000-4000-8000-000000000001';
 
 async function main() {
   const migrationsFolder = path.join(process.cwd(), 'drizzle');
   const userId = process.argv[2] ?? LOCAL_USER_ID;
-  const url = process.env.DATABASE_URL;
+  const rawUrl = process.env.DATABASE_URL?.trim();
+  const url = rawUrl && !rawUrl.includes('<') && !rawUrl.includes('>') ? rawUrl : null;
 
   if (url) {
     const client = postgres(url, { max: 1, prepare: false });
