@@ -1,0 +1,582 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
+import { Trash2 } from 'lucide-react';
+import { Drawer } from 'vaul';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { jakartaYmd } from '@/lib/dates';
+import { formatAmount, formatIdr } from '@/lib/money';
+import { cn } from '@/lib/utils';
+import type { CategoryOption, SheetData, SheetMode, WalletOption } from '@/lib/view-types';
+import {
+  createTransactionAction,
+  createTransferAction,
+  deleteTransactionAction,
+  getTransactionDetailAction,
+  updateTransactionAction,
+  updateTransferAction,
+} from '@/server/actions/transactions';
+import { Numpad, type NumpadKey } from './numpad';
+
+const SEGMENTS: { value: SheetMode; label: string }[] = [
+  { value: 'expense', label: 'Keluar' },
+  { value: 'income', label: 'Masuk' },
+  { value: 'transfer', label: 'Pindah' },
+];
+
+function newRequestId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function appendKey(prev: string, key: NumpadKey): string {
+  if (key === 'back') return prev.slice(0, -1);
+  if (key === 'clear') return '';
+  if (key === 'rb') return prev === '' ? prev : `${prev}000`.slice(0, 15);
+  if (key === '000') return prev === '' ? prev : `${prev}000`.slice(0, 15);
+  if (prev === '0') return key;
+  return `${prev}${key}`.slice(0, 15);
+}
+
+function digitsToAmount(digits: string): number {
+  const value = Number(digits || '0');
+  return Number.isSafeInteger(value) && value > 0 ? value : 0;
+}
+
+interface TransactionSheetProps {
+  data: SheetData;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  createMode: SheetMode;
+  editId: string | null;
+}
+
+export function TransactionSheet({ data, open, onOpenChange, createMode, editId }: TransactionSheetProps) {
+  const [mode, setMode] = useState<SheetMode>('expense');
+  const [digits, setDigits] = useState('');
+  const [feeDigits, setFeeDigits] = useState('');
+  const [fromWalletId, setFromWalletId] = useState<string | null>(null);
+  const [toWalletId, setToWalletId] = useState<string | null>(null);
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [dateYmd, setDateYmd] = useState(jakartaYmd(new Date()));
+  const [note, setNote] = useState('');
+  const [tagsRaw, setTagsRaw] = useState('');
+  const [requestId, setRequestId] = useState(newRequestId);
+  const [busy, setBusy] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(false);
+  const [editKind, setEditKind] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const isTransferEdit = editKind === 'transfer_in' || editKind === 'transfer_out';
+  const amount = digitsToAmount(digits);
+  const fee = digitsToAmount(feeDigits);
+
+  // Reset/init saat sheet dibuka.
+  useEffect(() => {
+    if (!open) return;
+    setBusy(false);
+    setConfirmDelete(false);
+    setRequestId(newRequestId());
+    setDateYmd(jakartaYmd(new Date()));
+    setNote('');
+    setTagsRaw('');
+    setFeeDigits('');
+
+    if (editId) {
+      setLoadingEdit(true);
+      void getTransactionDetailAction(editId).then((result) => {
+        setLoadingEdit(false);
+        if (!result.ok) {
+          toast.error(result.error);
+          onOpenChange(false);
+          return;
+        }
+        const { transaction, transfer } = result.data;
+        setEditKind(transaction.kind);
+        setDigits(String(transaction.amount));
+        setDateYmd(jakartaYmd(new Date(transaction.occurredAt)));
+        setNote(transaction.note ?? '');
+        setTagsRaw((transaction.tags ?? []).join(', '));
+        if (transfer) {
+          setMode('transfer');
+          setFromWalletId(transfer.fromWalletId);
+          setToWalletId(transfer.toWalletId);
+          setCategoryId(null);
+          setFeeDigits(transfer.feeAmount > 0 ? String(transfer.feeAmount) : '');
+        } else {
+          setMode(transaction.kind === 'income' ? 'income' : 'expense');
+          setFromWalletId(transaction.walletId);
+          setToWalletId(null);
+          setCategoryId(transaction.categoryId);
+        }
+      });
+      return;
+    }
+
+    setEditKind(null);
+    setDigits('');
+    setMode(createMode);
+    setFromWalletId(data.lastUsedWalletId ?? data.wallets[0]?.id ?? null);
+    setToWalletId(null);
+    const categories = createMode === 'income' ? data.incomeCategories : data.expenseCategories;
+    setCategoryId(createMode === 'transfer' ? null : (categories[0]?.id ?? null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editId]);
+
+  const pressKey = useCallback((key: NumpadKey) => {
+    setDigits((prev) => appendKey(prev, key));
+  }, []);
+
+  const submit = useCallback(async () => {
+    if (busy || loadingEdit) return;
+    const parsedTags = tagsRaw
+      .split(',')
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+      .slice(0, 10);
+    const cleanNote = note.trim() ? note.trim() : null;
+
+    if (amount <= 0) {
+      toast.error('Isi nominal dulu');
+      return;
+    }
+    if (mode === 'transfer') {
+      if (!fromWalletId || !toWalletId) {
+        toast.error('Pilih kantong asal dan tujuan');
+        return;
+      }
+      if (fromWalletId === toWalletId) {
+        toast.error('Kantong asal dan tujuan tidak boleh sama');
+        return;
+      }
+    } else if (!fromWalletId) {
+      toast.error('Pilih kantong dulu');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      if (editId) {
+        const result =
+          mode === 'transfer'
+            ? await updateTransferAction({
+                transactionId: editId,
+                fromWalletId,
+                toWalletId,
+                amount,
+                feeAmount: fee,
+                date: dateYmd,
+                note: cleanNote,
+              })
+            : await updateTransactionAction({
+                transactionId: editId,
+                kind: mode,
+                amount,
+                walletId: fromWalletId,
+                categoryId,
+                date: dateYmd,
+                note: cleanNote,
+                tags: parsedTags,
+              });
+        if (result.ok) {
+          toast.success('Perubahan tersimpan');
+          onOpenChange(false);
+        } else {
+          toast.error(result.error);
+        }
+        return;
+      }
+
+      const result =
+        mode === 'transfer'
+          ? await createTransferAction({
+              fromWalletId,
+              toWalletId,
+              amount,
+              feeAmount: fee,
+              date: dateYmd,
+              note: cleanNote,
+              clientRequestId: requestId,
+            })
+          : await createTransactionAction({
+              kind: mode,
+              amount,
+              walletId: fromWalletId,
+              categoryId,
+              date: dateYmd,
+              note: cleanNote,
+              tags: parsedTags,
+              clientRequestId: requestId,
+            });
+      if (result.ok) {
+        toast.success(mode === 'transfer' ? 'Transfer tersimpan' : 'Transaksi tersimpan');
+        onOpenChange(false);
+      } else {
+        toast.error(result.error);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    amount, busy, categoryId, dateYmd, editId, fee, fromWalletId, loadingEdit, mode, note, onOpenChange, requestId, tagsRaw, toWalletId,
+  ]);
+
+  // Dukungan keyboard untuk desktop (angka, backspace, Enter).
+  const submitRef = useRef(submit);
+  useEffect(() => {
+    submitRef.current = submit;
+  }, [submit]);
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+      if (typing) return;
+      if (/^[0-9]$/.test(event.key)) {
+        event.preventDefault();
+        pressKey(event.key as NumpadKey);
+      } else if (event.key === 'Backspace') {
+        event.preventDefault();
+        pressKey('back');
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        void submitRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, pressKey]);
+
+  async function handleDelete() {
+    if (!editId) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      setTimeout(() => setConfirmDelete(false), 3000);
+      return;
+    }
+    setBusy(true);
+    const result = await deleteTransactionAction(editId);
+    setBusy(false);
+    if (result.ok) {
+      toast.success('Transaksi dihapus');
+      onOpenChange(false);
+    } else {
+      toast.error(result.error);
+    }
+  }
+
+  const wallets = data.wallets;
+  const categories = mode === 'income' ? data.incomeCategories : data.expenseCategories;
+  const todayYmd = jakartaYmd(new Date());
+  const yesterdayYmd = jakartaYmd(new Date(Date.now() - 86_400_000));
+
+  /** Saat tipe berganti, pastikan kategori terpilih tetap sejenis. */
+  const switchMode = useCallback(
+    (next: SheetMode) => {
+      setMode(next);
+      if (next === 'transfer') {
+        setCategoryId(null);
+        return;
+      }
+      const list = next === 'income' ? data.incomeCategories : data.expenseCategories;
+      setCategoryId((current) =>
+        list.some((category) => category.id === current) ? current : (list[0]?.id ?? null),
+      );
+    },
+    [data.expenseCategories, data.incomeCategories],
+  );
+
+  return (
+    <Drawer.Root open={open} onOpenChange={onOpenChange} shouldScaleBackground={false}>
+      <Drawer.Portal>
+        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/55" />
+        <Drawer.Content
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[96dvh] flex-col rounded-t-3xl border-t border-border bg-card shadow-2xl outline-none"
+          aria-describedby={undefined}
+        >
+          <Drawer.Title className="sr-only">
+            {editId ? 'Ubah transaksi' : 'Tambah transaksi'}
+          </Drawer.Title>
+          <div className="mx-auto mt-2.5 h-1.5 w-11 shrink-0 rounded-full bg-border" aria-hidden />
+
+          <div className="mx-auto flex w-full max-w-lg flex-1 flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-2 px-4 pt-2.5">
+              <div className="flex rounded-xl bg-muted p-1" role="tablist" aria-label="Tipe transaksi">
+                {SEGMENTS.map((segment) => {
+                  const disabled =
+                    Boolean(editId) &&
+                    ((isTransferEdit && segment.value !== 'transfer') ||
+                      (!isTransferEdit && segment.value === 'transfer'));
+                  return (
+                    <button
+                      key={segment.value}
+                      type="button"
+                      role="tab"
+                      aria-selected={mode === segment.value}
+                      disabled={disabled}
+                      onClick={() => switchMode(segment.value)}
+                      className={cn(
+                        'rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors',
+                        mode === segment.value
+                          ? 'bg-card text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground',
+                        disabled && 'cursor-not-allowed opacity-40',
+                      )}
+                    >
+                      {segment.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {editId ? (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={busy}
+                  aria-label={confirmDelete ? 'Konfirmasi hapus transaksi' : 'Hapus transaksi'}
+                  className={cn(
+                    'flex h-9 items-center gap-1.5 rounded-xl px-3 text-sm transition-colors',
+                    confirmDelete
+                      ? 'bg-destructive text-destructive-foreground'
+                      : 'text-destructive hover:bg-destructive/10',
+                  )}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {confirmDelete ? 'Yakin?' : ''}
+                </button>
+              ) : null}
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 pt-2">
+              <div className="py-2 text-center">
+                <div
+                  className={cn(
+                    'text-4xl font-semibold tabular-nums tracking-tight',
+                    amount <= 0 && 'text-muted-foreground/50',
+                  )}
+                >
+                  {formatIdr(amount)}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {mode === 'expense'
+                    ? 'Pengeluaran'
+                    : mode === 'income'
+                      ? 'Pemasukan'
+                      : 'Pindah antar kantong'}
+                  {loadingEdit ? ' · memuat…' : ''}
+                </p>
+              </div>
+
+              <section className="mt-1 space-y-3">
+                {mode === 'transfer' ? (
+                  <>
+                    <LabeledRow label="Dari">
+                      <WalletChips
+                        wallets={wallets}
+                        value={fromWalletId}
+                        excludeId={toWalletId}
+                        onChange={setFromWalletId}
+                      />
+                    </LabeledRow>
+                    <LabeledRow label="Ke">
+                      <WalletChips
+                        wallets={wallets}
+                        value={toWalletId}
+                        excludeId={fromWalletId}
+                        onChange={setToWalletId}
+                      />
+                    </LabeledRow>
+                  </>
+                ) : (
+                  <LabeledRow label="Kantong">
+                    <WalletChips wallets={wallets} value={fromWalletId} onChange={setFromWalletId} />
+                  </LabeledRow>
+                )}
+
+                {mode !== 'transfer' ? (
+                  <LabeledRow label="Kategori">
+                    <CategoryChips categories={categories} value={categoryId} onChange={setCategoryId} />
+                  </LabeledRow>
+                ) : null}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDateYmd(todayYmd)}
+                    className={dateChipClass(dateYmd === todayYmd)}
+                  >
+                    Hari ini
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDateYmd(yesterdayYmd)}
+                    className={dateChipClass(dateYmd === yesterdayYmd)}
+                  >
+                    Kemarin
+                  </button>
+                  <input
+                    type="date"
+                    value={dateYmd}
+                    onChange={(event) => {
+                      if (event.target.value) setDateYmd(event.target.value);
+                    }}
+                    className="h-9 rounded-xl border border-input bg-card px-2.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label="Tanggal transaksi"
+                  />
+                </div>
+
+                {mode === 'transfer' ? (
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="fee-input"
+                      className="w-24 shrink-0 text-xs font-medium text-muted-foreground"
+                    >
+                      Biaya admin
+                    </label>
+                    <Input
+                      id="fee-input"
+                      inputMode="numeric"
+                      placeholder="0"
+                      value={feeDigits ? formatAmount(fee) : ''}
+                      onChange={(event) => {
+                        const digitsOnly = event.target.value.replace(/\D/g, '').slice(0, 15);
+                        setFeeDigits(digitsOnly === '0' ? '' : digitsOnly);
+                      }}
+                      className="h-10"
+                    />
+                  </div>
+                ) : null}
+
+                <Input
+                  placeholder="Catatan (opsional)"
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  maxLength={280}
+                  aria-label="Catatan"
+                />
+                <Input
+                  placeholder="Tag, pisahkan dengan koma (opsional)"
+                  value={tagsRaw}
+                  onChange={(event) => setTagsRaw(event.target.value)}
+                  aria-label="Tag"
+                />
+              </section>
+            </div>
+
+            <div className="border-t border-border px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2.5">
+              <Numpad onKey={pressKey} />
+              <Button
+                className="mt-2 h-12 w-full text-base"
+                onClick={() => void submit()}
+                disabled={busy || loadingEdit}
+              >
+                {busy ? 'Menyimpan…' : editId ? 'Simpan perubahan' : 'Simpan'}
+              </Button>
+            </div>
+          </div>
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
+  );
+}
+
+function LabeledRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-medium text-muted-foreground">{label}</p>
+      {children}
+    </div>
+  );
+}
+
+function dateChipClass(active: boolean): string {
+  return cn(
+    'h-9 rounded-xl border px-3 text-sm transition-colors',
+    active
+      ? 'border-primary bg-accent font-medium text-accent-foreground'
+      : 'border-border bg-card text-muted-foreground hover:bg-muted',
+  );
+}
+
+function WalletChips({
+  wallets,
+  value,
+  onChange,
+  excludeId,
+}: {
+  wallets: WalletOption[];
+  value: string | null;
+  onChange: (id: string) => void;
+  excludeId?: string | null;
+}) {
+  if (wallets.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Belum ada kantong. Buat kantong dulu di halaman Kantong.
+      </p>
+    );
+  }
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+      {wallets.map((wallet) => {
+        const active = wallet.id === value;
+        const disabled = wallet.id === excludeId;
+        return (
+          <button
+            key={wallet.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(wallet.id)}
+            className={cn(
+              'flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors',
+              active
+                ? 'border-primary bg-accent font-medium text-accent-foreground'
+                : 'border-border bg-card text-foreground hover:bg-muted',
+              disabled && 'opacity-40',
+            )}
+          >
+            <span aria-hidden>{wallet.icon ?? '💳'}</span>
+            {wallet.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function CategoryChips({
+  categories,
+  value,
+  onChange,
+}: {
+  categories: CategoryOption[];
+  value: string | null;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+      {categories.map((category) => {
+        const active = category.id === value;
+        return (
+          <button
+            key={category.id}
+            type="button"
+            onClick={() => onChange(category.id)}
+            className={cn(
+              'flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors',
+              active
+                ? 'border-primary bg-accent font-medium text-accent-foreground'
+                : 'border-border bg-card text-foreground hover:bg-muted',
+            )}
+          >
+            <span aria-hidden>{category.icon ?? '🏷️'}</span>
+            {category.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
