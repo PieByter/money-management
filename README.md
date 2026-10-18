@@ -141,23 +141,36 @@ Untuk uji login dari HP di jaringan lokal, tambahkan juga `http://<IP-komputer>:
 | `npm run db:migrate` | Jalankan migrasi ke `DATABASE_URL` (atau PGlite bila kosong). |
 | `npm run db:seed` | Seed kategori default (juga otomatis dijalankan saat aplikasi pertama dibuka). |
 | `npm run icons` | Regenerasi ikon PWA (`/public/icons/*`, `src/app/icon.png`, `apple-icon.png`) tanpa dependency. |
-| `npm run autocommit` | Rekam semua perubahan ke satu commit otomatis (pesan berisi ringkasan + timestamp WIB). |
-| `npm run autocommit:watch` | Mode pantau: auto-commit setelah tidak ada perubahan selama 60 detik. |
+| `npm run commit:auto` | **Pratinjau** rencana commit otomatis (dry-run) — tidak ada commit yang dibuat. |
+| `npm run autocommit` | Buat commit otomatis sesuai rencana (setara `commit:auto -- --apply`). |
 
 ### Auto commit (opsional)
 
-Untuk alur kerja solo tanpa ingin memikirkan pesan commit:
+Skrip [scripts/auto-commit.mjs](./scripts/auto-commit.mjs) membaca perubahan di working tree,
+mengelompokkannya per **tipe + scope** (`feat(web)`, `fix(db)`, …), lalu menyusun pesan
+**Conventional Commits** berbahasa Indonesia.
 
 ```bash
-npm run autocommit              # commit sekali (dilewati bila tidak ada perubahan)
-npm run autocommit -- --push    # commit lalu push ke remote
-npm run autocommit:watch        # mode pantau (debounce 60 dtk)
-node scripts/auto-commit.mjs --watch --interval 15 --push
+npm run commit:auto                      # lihat rencana (dry-run)
+npm run commit:auto -- --apply           # buat commit-nya
+npm run commit:auto -- --staged          # hanya berkas yang sudah di-stage
+npm run commit:auto -- --json            # keluaran JSON untuk tooling lain
+npm run commit:auto -- --apply --co-author=copilot   # tambah trailer Co-authored-by
+npm run commit:auto -- --ai              # subjek ditulis Claude (butuh ANTHROPIC_API_KEY)
 ```
 
-Cara kerja: `git add -A` → lewati bila tidak ada perubahan atau sedang merge/rebase →
-commit dengan pesan `chore: auto-commit <tanggal/jam WIB>` + daftar file (maks. 10 baris)
-dan trailer `Co-authored-by`. Skrip tidak memiliki dependency tambahan.
+Cara kerja:
+
+- **Tipe** ditentukan dari status berkas + isi diff (berkas baru → `feat`, tes → `test`,
+  dokumentasi → `docs`, konfigurasi → `build`/`chore`, dst.).
+- **Scope** diambil dari daftar `workspaces` di `package.json` (di proyek ini tanpa workspace,
+  jadi scope dikosongkan).
+- **Berkas rahasia dilewati otomatis** (`.env*`, `*.pem`, `*.key`, `id_rsa`, `credentials`).
+- Tes yang se-scope digabung ke commit fitur/refactor-nya agar riwayat lebih rapi.
+- Perilaku bisa diubah lewat **`.commitrc.json`** di root (mis. `rules`, `overrides`,
+  `mergeTestsIntoFeature`).
+- Mode `--ai` hanya mengganti teks subjek; pengelompokan tetap deterministik, dan bila API
+  gagal (atau `ANTHROPIC_API_KEY` kosong) subjek deterministik dipakai sebagai fallback.
 
 ## Arsitektur singkat
 

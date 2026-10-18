@@ -14,8 +14,8 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "icons": "node scripts/generate-icons.mjs",
-    "autocommit": "node scripts/auto-commit.mjs",
-    "autocommit:watch": "node scripts/auto-commit.mjs --watch"
+    "autocommit": "node scripts/auto-commit.mjs --apply --co-author=copilot",
+    "commit:auto": "node scripts/auto-commit.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",
