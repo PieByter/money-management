@@ -46,7 +46,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id" suppressHydrationWarning data-scroll-behavior="smooth">
+      {/* suppressHydrationWarning: ekstensi browser (mis. ColorZilla) menambah atribut
+          seperti cz-shortcut-listen ke <body> sebelum React hydrate — bukan berasal dari app. */}
       <body
+        suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-dvh`}
       >
         <ThemeProvider
