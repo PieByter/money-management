@@ -15,7 +15,7 @@ function DialogOverlay({
 }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
     <DialogPrimitive.Overlay
-      className={cn('fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px]', 'animate-overlay-in', className)}
+      className={cn('fixed inset-0 z-50 bg-transparent', 'animate-overlay-in', className)}
       {...props}
     />
   );
