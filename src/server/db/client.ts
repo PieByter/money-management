@@ -55,6 +55,14 @@ function createHandle(): DbHandle {
   }
 
   const dataDir = process.env.PGLITE_DIR ?? path.join(process.cwd(), '.data', 'pglite');
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    const raw = process.env.DATABASE_URL?.trim();
+    throw new Error(
+      raw
+        ? '[db] DATABASE_URL masih berisi placeholder (<ref>/<region>). Isi dengan connection string Supabase "Transaction pooler" (port 6543) di Environment Variables Vercel.'
+        : '[db] DATABASE_URL belum diisi. PGlite tidak tersedia di serverless (filesystem read-only) — set DATABASE_URL ke Supabase "Transaction pooler" (port 6543).',
+    );
+  }
   fs.mkdirSync(dataDir, { recursive: true });
   const client = new PGlite(dataDir);
   const db = drizzlePglite(client, { schema }) as unknown as AppDb;

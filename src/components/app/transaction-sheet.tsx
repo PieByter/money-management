@@ -306,9 +306,9 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
         {/* Overlay transparan: tetap ada agar klik di luar menutup panel, tanpa peredupan. */}
         <Drawer.Overlay className="fixed inset-0 z-40 bg-transparent" />
         <Drawer.Content
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[96dvh] flex-col rounded-t-3xl border-t border-border bg-card shadow-2xl outline-none lg:inset-y-0 lg:mx-auto lg:my-auto lg:h-fit lg:max-h-[calc(100dvh-3rem)] lg:w-[min(72rem,94vw)] lg:rounded-3xl lg:border lg:ring-1 lg:ring-black/5 dark:lg:ring-white/10 [will-change:auto]!"
-          aria-describedby={undefined}
-        >
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[96dvh] flex-col rounded-t-3xl border-t border-border bg-card shadow-2xl outline-none lg:inset-y-0 lg:mx-auto lg:my-auto lg:h-fit lg:max-h-[calc(100dvh-3rem)] lg:w-[min(72rem,94vw)] lg:rounded-3xl lg:border lg:ring-1 lg:ring-black/5 dark:lg:ring-white/10 lg:after:hidden! [will-change:auto]!"
+        aria-describedby={undefined}
+          >
           <Drawer.Title className="sr-only">
             {editId ? 'Ubah transaksi' : 'Tambah transaksi'}
           </Drawer.Title>
@@ -528,7 +528,7 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
               </section>
               </div>
 
-              <div className="shrink-0 border-t border-border px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2.5 lg:border-l lg:border-t-0 lg:pb-6 lg:pl-8 lg:pt-2">
+              <div className="shrink-0 border-t border-border px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2.5 lg:flex lg:flex-col lg:justify-center lg:border-l lg:border-t-0 lg:pb-6 lg:pl-8 lg:pt-2">
                 <Numpad onKey={pressKey} />
                 <Button
                   className="mt-2 h-12 w-full text-base"

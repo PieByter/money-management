@@ -209,10 +209,18 @@ Keputusan penting (sesuai PRD):
 
 1. Buat project Supabase → jalankan `npm run db:migrate` dengan `DATABASE_URL` project tsb.
 2. Import repo ke Vercel, set env: `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-3. Build command default (`npm run build`). Setelah live, buka domain → login via magic link →
-   tambahkan URL `/auth/callback` ke daftar redirect Supabase.
-4. Buka di HP → browser menawarkan "Add to Home screen" (PWA installable).
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (atau `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
+   - **Wajib pakai Transaction pooler** (Supabase → Connect → *Transaction pooler*, port
+     **6543**, host `aws-0-<region>.pooler.supabase.com`). Koneksi *direct*
+     (`db.<ref>.supabase.co`) hanya IPv6 dan **tidak bisa dijangkau dari Vercel**.
+   - Jangan biarkan placeholder `<ref>`/`<region>`: aplikasi akan menolak memakai PGlite di
+     serverless dan menulis pesan jelas di log Vercel.
+3. Build command default (`npm run build`). Setelah live, buka domain → login (email+password)
+   → tambahkan URL `/auth/callback` ke daftar redirect Supabase.
+4. **Diagnosa cepat**: buka `https://<domain>/api/health` → harus `{ "ok": true, "mode": "postgres" }`.
+   Jika `false`, isinya menunjukkan sebabnya (`databaseUrl: "missing"`/`"placeholder"` atau
+   `errorCode` dari Postgres seperti `28P01` untuk password salah).
+5. Buka di HP → browser menawarkan "Add to Home screen" (PWA installable).
 
 ## Fase 2 (belum dibangun)
 
