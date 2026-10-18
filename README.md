@@ -95,6 +95,23 @@ provider Google bila dipakai.
 | `npm run db:migrate` | Jalankan migrasi ke `DATABASE_URL` (atau PGlite bila kosong). |
 | `npm run db:seed` | Seed kategori default (juga otomatis dijalankan saat aplikasi pertama dibuka). |
 | `npm run icons` | Regenerasi ikon PWA (`/public/icons/*`, `src/app/icon.png`, `apple-icon.png`) tanpa dependency. |
+| `npm run autocommit` | Rekam semua perubahan ke satu commit otomatis (pesan berisi ringkasan + timestamp WIB). |
+| `npm run autocommit:watch` | Mode pantau: auto-commit setelah tidak ada perubahan selama 60 detik. |
+
+### Auto commit (opsional)
+
+Untuk alur kerja solo tanpa ingin memikirkan pesan commit:
+
+```bash
+npm run autocommit              # commit sekali (dilewati bila tidak ada perubahan)
+npm run autocommit -- --push    # commit lalu push ke remote
+npm run autocommit:watch        # mode pantau (debounce 60 dtk)
+node scripts/auto-commit.mjs --watch --interval 15 --push
+```
+
+Cara kerja: `git add -A` → lewati bila tidak ada perubahan atau sedang merge/rebase →
+commit dengan pesan `chore: auto-commit <tanggal/jam WIB>` + daftar file (maks. 10 baris)
+dan trailer `Co-authored-by`. Skrip tidak memiliki dependency tambahan.
 
 ## Arsitektur singkat
 

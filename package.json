@@ -13,7 +13,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "autocommit": "node scripts/auto-commit.mjs",
+    "autocommit:watch": "node scripts/auto-commit.mjs --watch"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",
