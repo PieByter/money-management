@@ -50,7 +50,7 @@ export default function RootLayout({
           seperti cz-shortcut-listen ke <body> sebelum React hydrate — bukan berasal dari app. */}
       <body
         suppressHydrationWarning
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-dvh`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-dvh`}
       >
         <ThemeProvider
           attribute="class"
