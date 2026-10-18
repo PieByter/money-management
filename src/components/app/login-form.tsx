@@ -1,47 +1,34 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LogIn } from 'lucide-react';
+import { ArrowLeft, LogIn, Send } from 'lucide-react';
 import { toast } from 'sonner';
+import { PasswordInput } from '@/components/app/password-input';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { translateAuthError } from '@/lib/auth-messages';
 import { SUPABASE_KEY, SUPABASE_URL } from '@/lib/supabase/config';
 import { createSupabaseBrowserClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
 
-type Mode = 'signin' | 'signup';
+type Mode = 'signin' | 'signup' | 'forgot';
 
-/** Terjemahkan pesan error Supabase ke bahasa Indonesia yang jelas. */
-function translateError(message: string): string {
-  const text = message.toLowerCase();
-  if (text.includes('invalid login credentials')) return 'Email atau password salah.';
-  if (text.includes('email not confirmed')) {
-    return 'Email belum dikonfirmasi. Matikan "Confirm email" di Supabase → Authentication → Sign In / Providers → Email, atau konfirmasi lewat tautan di emailmu.';
-  }
-  if (text.includes('already registered') || text.includes('already been registered')) {
-    return 'Email ini sudah terdaftar — pilih "Masuk".';
-  }
-  if (text.includes('password should be at least')) return 'Password terlalu pendek (minimal 6 karakter).';
-  if (text.includes('unable to validate email') || text.includes('invalid email')) {
-    return 'Format email tidak valid.';
-  }
-  if (text.includes('rate limit') || text.includes('too many')) {
-    return 'Terlalu banyak percobaan. Tunggu sebentar lalu coba lagi.';
-  }
-  if (text.includes('provider is not enabled')) {
-    return 'Provider Google belum diaktifkan di Supabase (Authentication → Providers → Google).';
-  }
-  return message;
-}
-
-export function LoginForm() {
+export function LoginForm({
+  initialNotice = null,
+  initialMode = 'signin',
+}: {
+  initialNotice?: string | null;
+  initialMode?: Mode;
+}) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>('signin');
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(initialNotice);
+  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
   const [googleEnabled, setGoogleEnabled] = useState(false);
 
   // Tombol Google hanya tampil bila providernya benar-benar aktif di Supabase.
@@ -66,8 +53,12 @@ export function LoginForm() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const trimmedEmail = email.trim();
-    if (!trimmedEmail || !password) {
-      toast.error('Isi email dan password.');
+    if (!trimmedEmail) {
+      toast.error('Isi email dulu.');
+      return;
+    }
+    if (mode !== 'forgot' && !password) {
+      toast.error('Isi password dulu.');
       return;
     }
 
@@ -76,13 +67,25 @@ export function LoginForm() {
     const supabase = createSupabaseBrowserClient();
 
     try {
+      if (mode === 'forgot') {
+        const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+          redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+        });
+        if (error) {
+          toast.error(translateAuthError(error.message));
+          return;
+        }
+        setResetSentTo(trimmedEmail);
+        return;
+      }
+
       if (mode === 'signin') {
         const { error } = await supabase.auth.signInWithPassword({
           email: trimmedEmail,
           password,
         });
         if (error) {
-          toast.error(translateError(error.message));
+          toast.error(translateAuthError(error.message));
           return;
         }
         toast.success('Berhasil masuk.');
@@ -92,7 +95,7 @@ export function LoginForm() {
 
       const { data, error } = await supabase.auth.signUp({ email: trimmedEmail, password });
       if (error) {
-        toast.error(translateError(error.message));
+        toast.error(translateAuthError(error.message));
         return;
       }
       if (data.session) {
@@ -115,7 +118,7 @@ export function LoginForm() {
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
-    if (error) toast.error(translateError(error.message));
+    if (error) toast.error(translateAuthError(error.message));
   }
 
   return (
@@ -127,73 +130,133 @@ export function LoginForm() {
           </div>
           <h1 className="mt-3 text-xl font-semibold">Money Tracker</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Masuk untuk mencatat dan melihat keuanganmu.
+            {mode === 'forgot'
+              ? 'Masukkan emailmu, kami kirim tautan untuk membuat password baru.'
+              : 'Masuk untuk mencatat dan melihat keuanganmu.'}
           </p>
         </div>
 
-        <div className="flex rounded-xl bg-muted p-1" role="tablist" aria-label="Pilih mode">
-          {(
-            [
-              { value: 'signin', label: 'Masuk' },
-              { value: 'signup', label: 'Daftar' },
-            ] as const
-          ).map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="tab"
-              aria-selected={mode === option.value}
-              onClick={() => {
-                setMode(option.value);
-                setNotice(null);
-              }}
-              className={cn(
-                'flex-1 rounded-lg py-1.5 text-sm font-medium transition-colors',
-                mode === option.value
-                  ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
+        {mode !== 'forgot' ? (
+          <div className="flex rounded-xl bg-muted p-1" role="tablist" aria-label="Pilih mode">
+            {(
+              [
+                { value: 'signin', label: 'Masuk' },
+                { value: 'signup', label: 'Daftar' },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={mode === option.value}
+                onClick={() => {
+                  setMode(option.value);
+                  setNotice(null);
+                }}
+                className={cn(
+                  'flex-1 rounded-lg py-1.5 text-sm font-medium transition-colors',
+                  mode === option.value
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
-        <form onSubmit={submit} className="space-y-3">
-          <div className="space-y-1.5">
-            <label htmlFor="login-email" className="text-sm font-medium">
-              Email
-            </label>
-            <Input
-              id="login-email"
-              type="email"
-              required
-              autoComplete="email"
-              placeholder="nama@email.com"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
+        {mode === 'forgot' && resetSentTo ? (
+          <div className="space-y-3 rounded-2xl border border-border bg-card p-4 text-center">
+            <p className="text-sm font-medium">Tautan reset dikirim 📬</p>
+            <p className="text-xs text-muted-foreground">
+              Cek inbox (dan folder spam) untuk <span className="font-medium">{resetSentTo}</span>,
+              lalu buka tautannya di browser ini untuk membuat password baru.
+            </p>
+            <Button
+              variant="ghost"
+              className="gap-1.5"
+              onClick={() => {
+                setResetSentTo(null);
+                setMode('signin');
+              }}
+            >
+              <ArrowLeft className="h-4 w-4" /> Kembali ke halaman masuk
+            </Button>
           </div>
-          <div className="space-y-1.5">
-            <label htmlFor="login-password" className="text-sm font-medium">
-              Password
-            </label>
-            <Input
-              id="login-password"
-              type="password"
-              required
-              minLength={6}
-              autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-              placeholder={mode === 'signin' ? 'Password kamu' : 'Minimal 6 karakter'}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </div>
-          <Button type="submit" className="w-full gap-2" disabled={busy}>
-            <LogIn className="h-4 w-4" />
-            {busy ? 'Memproses…' : mode === 'signin' ? 'Masuk' : 'Buat akun'}
-          </Button>
-        </form>
+        ) : (
+          <form onSubmit={submit} className="space-y-3">
+            <div className="space-y-1.5">
+              <label htmlFor="login-email" className="text-sm font-medium">
+                Email
+              </label>
+              <Input
+                id="login-email"
+                type="email"
+                required
+                autoComplete="email"
+                placeholder="nama@email.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </div>
+
+            {mode !== 'forgot' ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label htmlFor="login-password" className="text-sm font-medium">
+                    Password
+                  </label>
+                  {mode === 'signin' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMode('forgot');
+                        setNotice(null);
+                      }}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Lupa password?
+                    </button>
+                  ) : null}
+                </div>
+                <PasswordInput
+                  id="login-password"
+                  required
+                  minLength={6}
+                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                  placeholder={mode === 'signin' ? 'Password kamu' : 'Minimal 6 karakter'}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+              </div>
+            ) : null}
+
+            <Button type="submit" className="w-full gap-2" disabled={busy}>
+              {mode === 'forgot' ? <Send className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
+              {busy
+                ? 'Memproses…'
+                : mode === 'signin'
+                  ? 'Masuk'
+                  : mode === 'signup'
+                    ? 'Buat akun'
+                    : 'Kirim tautan reset'}
+            </Button>
+
+            {mode === 'forgot' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signin');
+                  setNotice(null);
+                }}
+                className="mx-auto flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" /> Kembali ke halaman masuk
+              </button>
+            ) : null}
+          </form>
+        )}
 
         {mode === 'signup' ? (
           <p className="text-xs text-muted-foreground">
@@ -208,7 +271,7 @@ export function LoginForm() {
           </p>
         ) : null}
 
-        {googleEnabled ? (
+        {googleEnabled && mode !== 'forgot' ? (
           <>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <span className="h-px flex-1 bg-border" />
@@ -226,7 +289,16 @@ export function LoginForm() {
         ) : null}
 
         <p className="text-center text-xs text-muted-foreground">
-          Tanpa verifikasi email — cukup email dan password.
+          {mode === 'forgot' ? (
+            <>
+              Sudah ingat passwordnya?{' '}
+              <Link href="/login" className="font-medium text-primary hover:underline">
+                Kembali masuk
+              </Link>
+            </>
+          ) : (
+            'Tanpa verifikasi email — cukup email dan password.'
+          )}
         </p>
       </div>
     </div>

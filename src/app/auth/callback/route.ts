@@ -15,5 +15,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
-  return NextResponse.redirect(`${origin}/login`);
+  // Tautan kedaluwarsa/tidak valid → kembali ke login dengan penanda error.
+  return NextResponse.redirect(`${origin}/login?error=tautan`);
 }

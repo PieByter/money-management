@@ -99,6 +99,10 @@ menempelkan `DATABASE_URL` di file env — tidak perlu export manual.
      verifikasi email (disarankan untuk aplikasi pribadi).
    - Jika “Confirm email” dibiarkan aktif, akun baru harus dikonfirmasi lewat email dulu
      (aplikasi akan menampilkan petunjuk ini).
+   - Tombol mata di kolom password untuk melihat password yang sedang diketik.
+   - **Lupa password**: tautan “Lupa password?” mengirim email reset dari Supabase; tautannya
+     mendarat di `/reset-password` untuk membuat password baru (butuh halaman
+     *Reset password* aktif — bawaan sudah aktif). Buka tautan di browser yang sama.
 2. **Redirect URL.** Authentication → **URL Configuration → Redirect URLs**, tambahkan:
    - `http://localhost:3000/auth/callback`
    - `http://localhost:3001/auth/callback` (dev sering pindah port bila 3000 terpakai)
