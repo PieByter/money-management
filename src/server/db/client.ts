@@ -45,6 +45,21 @@ const globalForDb = globalThis as unknown as { __moneyDb?: DbHandle };
 function createHandle(): DbHandle {
   const url = resolveDatabaseUrl();
   if (url) {
+    try {
+      const hostname = new URL(url).hostname;
+      if (
+        (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) &&
+        hostname.startsWith('db.') &&
+        hostname.endsWith('.supabase.co')
+      ) {
+        console.warn(
+          '[db] Host "db.*.supabase.co" bersifat IPv6-only dan tidak bisa dijangkau Vercel. ' +
+            'Ganti DATABASE_URL ke Supabase "Transaction pooler" (host aws-0-<region>.pooler.supabase.com, port 6543).',
+        );
+      }
+    } catch {
+      // URL tidak valid; biarkan driver yang melaporkan.
+    }
     // Supavisor transaction pooler tidak mendukung prepared statements.
     const client = postgres(url, { max: 10, prepare: false });
     const db = drizzlePostgres(client, { schema }) as unknown as AppDb;
