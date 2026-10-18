@@ -75,8 +75,9 @@ Yang terjadi ketika env terisi:
 
 - Database pindah ke Postgres Supabase (gunakan connection string **Supavisor transaction
   pooler**, port 6543 — driver sudah memakai `prepare: false`).
-- Auth aktif: **magic link email + Google OAuth** (`@supabase/ssr`), middleware melindungi
-  halaman aplikasi.
+- Auth aktif: **email + password** (masuk & daftar langsung dari halaman `/login`, tanpa
+  perlu kirim/kirim ulang email) dan **Google OAuth** opsional (`@supabase/ssr`); middleware
+  melindungi halaman aplikasi.
 - **RLS** ikut terpasang dari migrasi yang sama: `drizzle/0001_rls.sql` mengaktifkan policy
   `user_id = auth.uid()` pada ketiga tabel + grant untuk role `authenticated` (blok ini
   otomatis di-skip di PGlite/lokal).
@@ -90,9 +91,26 @@ npm run db:migrate
 Skrip CLI (migrate/seed/drizzle-kit) otomatis memuat `.env`/`.env.local`, jadi cukup
 menempelkan `DATABASE_URL` di file env — tidak perlu export manual.
 
-Susun Supabase project: matikan "Confirm email" bila perlu, tambahkan URL redirect
-`https://<domain-kamu>/auth/callback` pada Authentication → URL Configuration, dan aktifkan
-provider Google bila dipakai.
+### Menyiapkan login di dashboard Supabase
+
+1. **Email + password (utama).** Authentication → **Sign In / Providers → Email**:
+   - Nyalakan **Enable email provider**.
+   - Matikan **Confirm email** → pendaftaran lewat tab “Daftar” langsung aktif tanpa
+     verifikasi email (disarankan untuk aplikasi pribadi).
+   - Jika “Confirm email” dibiarkan aktif, akun baru harus dikonfirmasi lewat email dulu
+     (aplikasi akan menampilkan petunjuk ini).
+2. **Redirect URL.** Authentication → **URL Configuration → Redirect URLs**, tambahkan:
+   - `http://localhost:3000/auth/callback`
+   - `http://localhost:3001/auth/callback` (dev sering pindah port bila 3000 terpakai)
+   - `http://<IP-komputer>:3001/auth/callback` untuk uji dari HP di Wi-Fi yang sama
+   - `https://<domain-produksi>/auth/callback` saat deploy
+3. **Google (opsional).** Authentication → Providers → **Google**: aktifkan, lalu isi
+   Client ID/Secret dari [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+   (buat OAuth Client ID tipe *Web application*, dan tempel
+   `https://<ref>.supabase.co/auth/v1/callback` sebagai Authorized redirect URI).
+   Tombol “Lanjutkan dengan Google” hanya muncul di halaman login **setelah** provider ini aktif.
+
+Password yang lupa direset dari Supabase → Authentication → Users (pilih user → *Reset password*).
 
 ### Jika `npm run db:migrate` gagal
 
