@@ -36,8 +36,17 @@ export async function GET() {
       await (await getDb()).execute(sql`select 1`);
       report.ok = true;
     } catch (error) {
-      const code = (error as { code?: string } | null)?.code;
+      // Error dari driver sering dibungkus Drizzle: kode & pesan ada di `cause`.
+      const root = error as { code?: unknown; message?: unknown; cause?: { code?: unknown; message?: unknown } };
+      const code = root.code ?? root.cause?.code;
       report.errorCode = typeof code === 'string' ? code : 'unknown';
+      const message = String(root.cause?.message ?? root.message ?? '');
+      if (message) {
+        report.errorHint = message
+          .replace(/\/\/[^@\s]+@/g, '//***@')
+          .replace(/password[^,)\s]*/gi, 'password***')
+          .slice(0, 140);
+      }
     }
   } else if (mode === 'unavailable') {
     report.hint =
