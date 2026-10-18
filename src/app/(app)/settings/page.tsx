@@ -32,7 +32,7 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="kategori" className="scroll-mt-20">
         <CardHeader>
           <CardTitle>Kategori</CardTitle>
         </CardHeader>
@@ -50,7 +50,7 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="kantong" className="scroll-mt-20">
         <CardHeader>
           <CardTitle>Kantong</CardTitle>
         </CardHeader>

@@ -3,7 +3,13 @@ import type { PGlite } from '@electric-sql/pglite';
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import type { AppDb } from '@/server/db/client';
 import { ensureDefaults } from '@/server/services/defaults';
-import { createWallet, deleteWallet, listWallets, setWalletArchived } from '@/server/services/wallets';
+import {
+  createRecommendedWallets,
+  createWallet,
+  deleteWallet,
+  listWallets,
+  setWalletArchived,
+} from '@/server/services/wallets';
 import {
   createTransaction,
   createTransfer,
@@ -44,6 +50,13 @@ async function newUser(): Promise<string> {
   return userId;
 }
 
+let walletCounter = 0;
+/** Nama kantong unik untuk tes (menghindari bentrok dengan kantong rekomendasi seed). */
+function uniqueName(base: string): string {
+  walletCounter += 1;
+  return `${base} uji ${walletCounter}`;
+}
+
 async function balanceOf(userId: string, walletId: string): Promise<number> {
   const wallets = await listWallets(db, userId);
   return wallets.find((wallet) => wallet.id === walletId)?.balance ?? 0;
@@ -75,7 +88,7 @@ describe('ledger transaksi', () => {
 
   it('pengeluaran mengurangi saldo', async () => {
     const userId = await newUser();
-    const gopay = await createWallet(db, userId, { name: 'GoPay', type: 'ewallet' });
+    const gopay = await createWallet(db, userId, { name: uniqueName('GoPay'), type: 'ewallet' });
 
     await createTransaction(db, userId, {
       kind: 'income',
@@ -99,7 +112,7 @@ describe('ledger transaksi', () => {
   it('transfer tidak dihitung sebagai pemasukan/pengeluaran', async () => {
     const userId = await newUser();
     const bca = await createWallet(db, userId, { name: 'BCA', type: 'bank' });
-    const cash = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const cash = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
 
     await createTransaction(db, userId, {
       kind: 'income',
@@ -124,7 +137,7 @@ describe('ledger transaksi', () => {
   it('transfer dengan biaya admin: fee jadi expense terpisah di group yang sama', async () => {
     const userId = await newUser();
     const bca = await createWallet(db, userId, { name: 'BCA', type: 'bank' });
-    const gopay = await createWallet(db, userId, { name: 'GoPay', type: 'ewallet' });
+    const gopay = await createWallet(db, userId, { name: uniqueName('GoPay'), type: 'ewallet' });
 
     await createTransaction(db, userId, {
       kind: 'income',
@@ -158,7 +171,7 @@ describe('ledger transaksi', () => {
 
   it('idempotensi: client_request_id yang sama tidak menghasilkan transaksi ganda', async () => {
     const userId = await newUser();
-    const wallet = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
     const clientRequestId = randomUUID();
 
     const first = await createTransaction(db, userId, {
@@ -184,7 +197,7 @@ describe('ledger transaksi', () => {
   it('idempotensi transfer: retry tidak menggandakan leg', async () => {
     const userId = await newUser();
     const from = await createWallet(db, userId, { name: 'BCA', type: 'bank' });
-    const to = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const to = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
     const clientRequestId = randomUUID();
 
     const first = await createTransfer(db, userId, {
@@ -211,7 +224,7 @@ describe('ledger transaksi', () => {
   it('edit transfer mengubah kedua leg secara atomik', async () => {
     const userId = await newUser();
     const bca = await createWallet(db, userId, { name: 'BCA', type: 'bank' });
-    const cash = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const cash = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
 
     const { groupId } = await createTransfer(db, userId, {
       fromWalletId: bca.id,
@@ -227,7 +240,7 @@ describe('ledger transaksi', () => {
     expect(await balanceOf(userId, bca.id)).toBe(-350_000);
     expect(await balanceOf(userId, cash.id)).toBe(350_000);
 
-    // Fee 0 → baris fee dihapus (soft delete).
+    // Fee 0 â†’ baris fee dihapus (soft delete).
     await updateTransfer(db, userId, { transactionId: leg!.id, feeAmount: 2_000 });
     expect(await balanceOf(userId, bca.id)).toBe(-352_000);
     await updateTransfer(db, userId, { transactionId: leg!.id, feeAmount: 0 });
@@ -237,7 +250,7 @@ describe('ledger transaksi', () => {
   it('hapus transfer menghapus semua baris satu group', async () => {
     const userId = await newUser();
     const bca = await createWallet(db, userId, { name: 'BCA', type: 'bank' });
-    const cash = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const cash = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
 
     const { groupId } = await createTransfer(db, userId, {
       fromWalletId: bca.id,
@@ -259,7 +272,7 @@ describe('ledger transaksi', () => {
 
   it('edit transaksi biasa dan validasi kategori/tipe', async () => {
     const userId = await newUser();
-    const wallet = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
     const created = await createTransaction(db, userId, {
       kind: 'expense',
       amount: 10_000,
@@ -307,7 +320,7 @@ describe('ledger transaksi', () => {
 
   it('kantong dengan transaksi tidak bisa dihapus, hanya diarsipkan', async () => {
     const userId = await newUser();
-    const wallet = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
     await createTransaction(db, userId, {
       kind: 'income',
       amount: 1_000,
@@ -337,7 +350,7 @@ describe('ledger transaksi', () => {
 describe('rekonsiliasi', () => {
   it('membuat adjustment sesuai selisih dan menjaga invariant', async () => {
     const userId = await newUser();
-    const wallet = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
     await createTransaction(db, userId, {
       kind: 'income',
       amount: 100_000,
@@ -351,7 +364,7 @@ describe('rekonsiliasi', () => {
       occurredAt: wibAt(2026, 10, 2),
     });
 
-    // Saldo ledger 60.000, riil 55.000 → adjustment_out 5.000.
+    // Saldo ledger 60.000, riil 55.000 â†’ adjustment_out 5.000.
     const result = await reconcileWallet(db, userId, { walletId: wallet.id, actualBalance: 55_000 });
     expect(result.diff).toBe(-5_000);
     expect(result.transactionId).not.toBeNull();
@@ -370,7 +383,7 @@ describe('rekonsiliasi', () => {
 describe('batas bulan WIB dan laporan', () => {
   it('31 Des 23:30 WIB masuk Desember; 01:30 WIB 1 Jan masuk Januari', async () => {
     const userId = await newUser();
-    const wallet = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
 
     await createTransaction(db, userId, {
       kind: 'expense',
@@ -393,7 +406,7 @@ describe('batas bulan WIB dan laporan', () => {
 
   it('tren harian dikelompokkan per hari WIB', async () => {
     const userId = await newUser();
-    const wallet = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
     await createTransaction(db, userId, {
       kind: 'expense',
       amount: 15_000,
@@ -415,7 +428,7 @@ describe('batas bulan WIB dan laporan', () => {
 
   it('breakdown kategori dan tren bulanan', async () => {
     const userId = await newUser();
-    const wallet = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
     const { listCategories } = await import('@/server/services/categories');
     const makan = (await listCategories(db, userId, { kind: 'expense' })).find(
       (c) => c.name === 'Makan',
@@ -446,7 +459,8 @@ describe('batas bulan WIB dan laporan', () => {
   });
 
   it('overview aset = jumlah saldo kantong aktif', async () => {
-    const userId = await newUser();
+    // Tanpa seed: fokus pada kantong yang dibuat tes ini.
+    const userId = randomUUID();
     const a = await createWallet(db, userId, { name: 'A', type: 'cash', openingBalance: 10_000 });
     const b = await createWallet(db, userId, { name: 'B', type: 'bank', openingBalance: 5_000 });
     const c = await createWallet(db, userId, { name: 'C', type: 'other' });
@@ -496,7 +510,7 @@ describe('batas bulan WIB dan laporan', () => {
   it('detail transaksi transfer mengembalikan kedua sisi + fee', async () => {
     const userId = await newUser();
     const from = await createWallet(db, userId, { name: 'BCA', type: 'bank' });
-    const to = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const to = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
     await createTransfer(db, userId, {
       fromWalletId: from.id,
       toWalletId: to.id,
@@ -521,7 +535,7 @@ describe('batas bulan WIB dan laporan', () => {
 
   it('filter riwayat: bulan, jenis, dan pencarian', async () => {
     const userId = await newUser();
-    const wallet = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
     await createTransaction(db, userId, {
       kind: 'expense',
       amount: 25_000,
@@ -553,7 +567,7 @@ describe('batas bulan WIB dan laporan', () => {
 
   it('paginasi cursor tidak mengembalikan baris ganda', async () => {
     const userId = await newUser();
-    const wallet = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
     for (let i = 0; i < 7; i += 1) {
       await createTransaction(db, userId, {
         kind: 'expense',
@@ -576,6 +590,46 @@ describe('batas bulan WIB dan laporan', () => {
   });
 });
 
+describe('seed idempotent & kantong rekomendasi', () => {
+  it('ensureDefaults paralel tidak menghasilkan duplikat kategori/kantong', async () => {
+    const userId = randomUUID();
+    await Promise.all([ensureDefaults(db, userId), ensureDefaults(db, userId), ensureDefaults(db, userId)]);
+
+    const { listCategories } = await import('@/server/services/categories');
+    const categories = await listCategories(db, userId, { includeArchived: true });
+    const expenseNames = categories.filter((c) => c.kind === 'expense').map((c) => c.name.toLowerCase());
+    expect(new Set(expenseNames).size).toBe(expenseNames.length);
+    expect(expenseNames.length).toBe(9);
+
+    const wallets = await listWallets(db, userId);
+    expect(wallets.length).toBe(8);
+    expect(new Set(wallets.map((w) => w.name.toLowerCase())).size).toBe(8);
+    expect(wallets.map((w) => w.name)).toContain('OVO');
+    expect(wallets.map((w) => w.name)).toContain('ShopeePay');
+    expect(wallets.map((w) => w.name)).toContain('Bank Jago');
+  });
+
+  it('createRecommendedWallets idempotent', async () => {
+    const userId = randomUUID();
+    expect(await createRecommendedWallets(db, userId)).toBe(8);
+    expect(await createRecommendedWallets(db, userId)).toBe(0);
+    expect((await listWallets(db, userId)).length).toBe(8);
+  });
+
+  it('menolak kantong duplikat (nama sama, beda huruf besar/kecil)', async () => {
+    const userId = await newUser();
+    await expect(createWallet(db, userId, { name: 'cash', type: 'cash' })).rejects.toThrow();
+  });
+
+  it('nama kantong boleh dipakai lagi setelah dihapus', async () => {
+    const userId = randomUUID();
+    const first = await createWallet(db, userId, { name: 'Dompet Sementara', type: 'other' });
+    expect(await deleteWallet(db, userId, first.id)).toEqual({ deleted: true });
+    const second = await createWallet(db, userId, { name: 'Dompet Sementara', type: 'other' });
+    expect(second.id).not.toBe(first.id);
+  });
+});
+
 describe('kategori', () => {
   it('seed default berjalan sekali dan kategori terpakai tidak bisa dihapus', async () => {
     const userId = await newUser();
@@ -586,7 +640,7 @@ describe('kategori', () => {
     await ensureDefaults(db, userId);
     expect((await listCategories(db, userId)).length).toBe(first.length);
 
-    const wallet = await createWallet(db, userId, { name: 'Cash', type: 'cash' });
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
     const makan = first.find((c) => c.name === 'Makan');
     await createTransaction(db, userId, {
       kind: 'expense',

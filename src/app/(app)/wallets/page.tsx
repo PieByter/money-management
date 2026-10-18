@@ -1,5 +1,9 @@
 import Link from 'next/link';
-import { WalletActionsMenu, WalletCreateButton } from '@/components/app/wallet-manager';
+import {
+  WalletActionsMenu,
+  WalletBulkCreateButton,
+  WalletCreateButton,
+} from '@/components/app/wallet-manager';
 import { formatIdr } from '@/lib/money';
 import { WALLET_TYPE_LABELS } from '@/lib/view-types';
 import { requireUser } from '@/server/auth';
@@ -51,10 +55,13 @@ export default async function WalletsPage() {
           </span>
           <p className="text-sm font-medium">Belum ada kantong</p>
           <p className="max-w-xs text-xs text-muted-foreground">
-            Buat kantong pertama: uang tunai, rekening bank, atau dompet digital seperti
-            GoPay/OVO.
+            Tambahkan sekaligus kantong yang umum dipakai (Cash, OVO, GoPay, ShopeePay, Bank
+            Mandiri, Bank Permata, Bank Jago, Kartu e-Money) — nanti bisa diubah/dihapus.
           </p>
-          <WalletCreateButton label="Buat kantong pertama" />
+          <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+            <WalletBulkCreateButton label="Tambah 8 kantong rekomendasi" variant="default" />
+            <WalletCreateButton label="Buat manual" />
+          </div>
         </div>
       ) : (
         <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">

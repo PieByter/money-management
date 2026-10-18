@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Trash2 } from 'lucide-react';
 import { Drawer } from 'vaul';
@@ -68,10 +69,20 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [editKind, setEditKind] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const router = useRouter();
 
   const isTransferEdit = editKind === 'transfer_in' || editKind === 'transfer_out';
   const amount = digitsToAmount(digits);
   const fee = digitsToAmount(feeDigits);
+
+  /** Tutup sheet lalu buka halaman terkait (kelola kantong/kategori). */
+  const goTo = useCallback(
+    (path: string) => {
+      onOpenChange(false);
+      router.push(path);
+    },
+    [onOpenChange, router],
+  );
 
   // Reset/init saat sheet dibuka.
   useEffect(() => {
@@ -294,16 +305,19 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 z-40 bg-black/55" />
         <Drawer.Content
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[96dvh] flex-col rounded-t-3xl border-t border-border bg-card shadow-2xl outline-none"
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[96dvh] flex-col rounded-t-3xl border-t border-border bg-card shadow-2xl outline-none lg:inset-y-0 lg:mx-auto lg:my-auto lg:h-fit lg:max-h-[calc(100dvh-3rem)] lg:w-[min(72rem,94vw)] lg:rounded-3xl lg:border"
           aria-describedby={undefined}
         >
           <Drawer.Title className="sr-only">
             {editId ? 'Ubah transaksi' : 'Tambah transaksi'}
           </Drawer.Title>
-          <div className="mx-auto mt-2.5 h-1.5 w-11 shrink-0 rounded-full bg-border" aria-hidden />
+          <div
+            className="mx-auto mt-2.5 h-1.5 w-11 shrink-0 rounded-full bg-border lg:hidden"
+            aria-hidden
+          />
 
-          <div className="mx-auto flex w-full max-w-lg flex-1 flex-col overflow-hidden">
-            <div className="flex items-center justify-between gap-2 px-4 pt-2.5">
+          <div className="mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:max-w-6xl lg:py-2">
+            <div className="flex items-center justify-between gap-2 px-4 pt-2.5 lg:px-6">
               <div className="flex rounded-xl bg-muted p-1" role="tablist" aria-label="Tipe transaksi">
                 {SEGMENTS.map((segment) => {
                   const disabled =
@@ -350,8 +364,10 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
               ) : null}
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 pt-2">
-              <div className="py-2 text-center">
+            {/* Layar lebar: dua kolom — form (kiri) + numpad & simpan (kanan). */}
+            <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-8 lg:px-8">
+              <div className="flex min-h-0 flex-col overflow-y-auto px-4 pt-2 lg:px-0 lg:pt-4">
+                <div className="py-2 text-center lg:pb-4 lg:pt-0 lg:text-left">
                 <div
                   className={cn(
                     'text-4xl font-semibold tabular-nums tracking-tight',
@@ -370,39 +386,82 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
                 </p>
               </div>
 
-              <section className="mt-1 space-y-3">
+              <section className="mt-1 space-y-3 sm:grid sm:grid-cols-2 sm:gap-x-4 sm:gap-y-3 sm:space-y-0">
                 {mode === 'transfer' ? (
                   <>
-                    <LabeledRow label="Dari">
+                    <LabeledRow
+                      label="Dari"
+                      className="sm:col-span-2"
+                      action={
+                        <button
+                          type="button"
+                          onClick={() => goTo('/wallets')}
+                          className="text-xs font-medium text-primary hover:underline"
+                        >
+                          Kelola kantong
+                        </button>
+                      }
+                    >
                       <WalletChips
                         wallets={wallets}
                         value={fromWalletId}
                         excludeId={toWalletId}
                         onChange={setFromWalletId}
+                        onCreate={() => goTo('/wallets')}
                       />
                     </LabeledRow>
-                    <LabeledRow label="Ke">
+                    <LabeledRow label="Ke" className="sm:col-span-2">
                       <WalletChips
                         wallets={wallets}
                         value={toWalletId}
                         excludeId={fromWalletId}
                         onChange={setToWalletId}
+                        onCreate={() => goTo('/wallets')}
                       />
                     </LabeledRow>
                   </>
                 ) : (
-                  <LabeledRow label="Kantong">
-                    <WalletChips wallets={wallets} value={fromWalletId} onChange={setFromWalletId} />
+                  <LabeledRow
+                    label="Kantong"
+                    className="sm:col-span-2"
+                    action={
+                      <button
+                        type="button"
+                        onClick={() => goTo('/wallets')}
+                        className="text-xs font-medium text-primary hover:underline"
+                      >
+                        Kelola kantong
+                      </button>
+                    }
+                  >
+                    <WalletChips
+                      wallets={wallets}
+                      value={fromWalletId}
+                      onChange={setFromWalletId}
+                      onCreate={() => goTo('/wallets')}
+                    />
                   </LabeledRow>
                 )}
 
                 {mode !== 'transfer' ? (
-                  <LabeledRow label="Kategori">
+                  <LabeledRow
+                    label="Kategori"
+                    className="sm:col-span-2"
+                    action={
+                      <button
+                        type="button"
+                        onClick={() => goTo('/settings#kategori')}
+                        className="text-xs font-medium text-primary hover:underline"
+                      >
+                        Kelola kategori
+                      </button>
+                    }
+                  >
                     <CategoryChips categories={categories} value={categoryId} onChange={setCategoryId} />
                   </LabeledRow>
                 ) : null}
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:col-span-1">
                   <button
                     type="button"
                     onClick={() => setDateYmd(todayYmd)}
@@ -429,7 +488,7 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
                 </div>
 
                 {mode === 'transfer' ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 sm:col-span-1">
                     <label
                       htmlFor="fee-input"
                       className="w-24 shrink-0 text-xs font-medium text-muted-foreground"
@@ -456,25 +515,31 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
                   onChange={(event) => setNote(event.target.value)}
                   maxLength={280}
                   aria-label="Catatan"
+                  className={cn('sm:col-span-1', mode === 'transfer' && 'sm:col-span-2')}
                 />
                 <Input
                   placeholder="Tag, pisahkan dengan koma (opsional)"
                   value={tagsRaw}
                   onChange={(event) => setTagsRaw(event.target.value)}
                   aria-label="Tag"
+                  className="sm:col-span-2"
                 />
               </section>
-            </div>
+              </div>
 
-            <div className="border-t border-border px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2.5">
-              <Numpad onKey={pressKey} />
-              <Button
-                className="mt-2 h-12 w-full text-base"
-                onClick={() => void submit()}
-                disabled={busy || loadingEdit}
-              >
-                {busy ? 'Menyimpan…' : editId ? 'Simpan perubahan' : 'Simpan'}
-              </Button>
+              <div className="shrink-0 border-t border-border px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2.5 lg:border-l lg:border-t-0 lg:pb-6 lg:pl-8 lg:pt-2">
+                <Numpad onKey={pressKey} />
+                <Button
+                  className="mt-2 h-12 w-full text-base"
+                  onClick={() => void submit()}
+                  disabled={busy || loadingEdit}
+                >
+                  {busy ? 'Menyimpan…' : editId ? 'Simpan perubahan' : 'Simpan'}
+                </Button>
+                <p className="mt-2 hidden text-center text-xs text-muted-foreground lg:block">
+                  Tip: ketik angka langsung dari keyboard — Enter menyimpan, Backspace menghapus.
+                </p>
+              </div>
             </div>
           </div>
         </Drawer.Content>
@@ -483,10 +548,23 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
   );
 }
 
-function LabeledRow({ label, children }: { label: string; children: React.ReactNode }) {
+function LabeledRow({
+  label,
+  action,
+  className,
+  children,
+}: {
+  label: string;
+  action?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div>
-      <p className="mb-1.5 text-xs font-medium text-muted-foreground">{label}</p>
+    <div className={className}>
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        {action}
+      </div>
       {children}
     </div>
   );
@@ -506,21 +584,30 @@ function WalletChips({
   value,
   onChange,
   excludeId,
+  onCreate,
 }: {
   wallets: WalletOption[];
   value: string | null;
   onChange: (id: string) => void;
   excludeId?: string | null;
+  onCreate?: () => void;
 }) {
   if (wallets.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Belum ada kantong. Buat kantong dulu di halaman Kantong.
-      </p>
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <span>Belum ada kantong.</span>
+        <button
+          type="button"
+          onClick={onCreate}
+          className="rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
+        >
+          + Buat kantong
+        </button>
+      </div>
     );
   }
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+    <div className="flex flex-wrap gap-2">
       {wallets.map((wallet) => {
         const active = wallet.id === value;
         const disabled = wallet.id === excludeId;
@@ -557,7 +644,7 @@ function CategoryChips({
   onChange: (id: string) => void;
 }) {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+    <div className="flex flex-wrap gap-2">
       {categories.map((category) => {
         const active = category.id === value;
         return (

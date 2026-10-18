@@ -1,6 +1,7 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { AppDb } from '../db/client';
-import { categories, type CategoryKind } from '../db/schema';
+import { categories, wallets, type CategoryKind } from '../db/schema';
+import { createRecommendedWallets } from './wallets';
 
 interface SeedCategory {
   name: string;
@@ -27,27 +28,39 @@ const DEFAULT_CATEGORIES: SeedCategory[] = [
 ];
 
 /**
- * Seed kategori default sekali per user (idempotent).
- * Dipanggil dari layout aplikasi sehingga "migrasi + seed jalan dari nol"
- * tanpa perintah tambahan.
+ * Seed kategori + kantong default sekali per user.
+ * Idempotent & aman dari pemanggilan paralel: insert memakai
+ * ON CONFLICT DO NOTHING (didukung unique index parsial) sehingga duplikat
+ * tidak mungkin terbentuk walau layout & page dimuat bersamaan.
  */
 export async function ensureDefaults(db: AppDb, userId: string): Promise<void> {
-  const [row] = await db
+  const [categoryRow] = await db
     .select({ value: sql<number>`count(*)::int` })
     .from(categories)
-    .where(eq(categories.userId, userId));
-  if (Number(row?.value ?? 0) > 0) return;
+    .where(and(eq(categories.userId, userId), isNull(categories.archivedAt)));
+  if (Number(categoryRow?.value ?? 0) === 0) {
+    await db
+      .insert(categories)
+      .values(
+        DEFAULT_CATEGORIES.map((category, index) => ({
+          userId,
+          name: category.name,
+          kind: category.kind,
+          icon: category.icon,
+          color: category.color,
+          sortOrder: index + 1,
+        })),
+      )
+      .onConflictDoNothing();
+  }
 
-  await db.insert(categories).values(
-    DEFAULT_CATEGORIES.map((category, index) => ({
-      userId,
-      name: category.name,
-      kind: category.kind,
-      icon: category.icon,
-      color: category.color,
-      sortOrder: index + 1,
-    })),
-  );
+  const [walletRow] = await db
+    .select({ value: sql<number>`count(*)::int` })
+    .from(wallets)
+    .where(and(eq(wallets.userId, userId), isNull(wallets.archivedAt)));
+  if (Number(walletRow?.value ?? 0) === 0) {
+    await createRecommendedWallets(db, userId);
+  }
 }
 
 /** Kembalikan id kategori expense + nama, dipakai untuk validasi cepat. */

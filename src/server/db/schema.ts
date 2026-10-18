@@ -9,6 +9,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -45,6 +46,9 @@ export const wallets = pgTable(
   },
   (t) => [
     index('wallets_user_idx').on(t.userId),
+    uniqueIndex('wallets_user_name_uq')
+      .on(t.userId, sql`lower(${t.name})`)
+      .where(sql`${t.archivedAt} is null`),
     check('wallets_type_check', sql`${t.type} in ('cash','bank','ewallet','other')`),
   ],
 );
@@ -64,6 +68,9 @@ export const categories = pgTable(
   },
   (t) => [
     index('categories_user_kind_idx').on(t.userId, t.kind),
+    uniqueIndex('categories_user_kind_name_uq')
+      .on(t.userId, t.kind, sql`lower(${t.name})`)
+      .where(sql`${t.archivedAt} is null`),
     check('categories_kind_check', sql`${t.kind} in ('income','expense')`),
   ],
 );

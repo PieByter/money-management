@@ -20,6 +20,10 @@ export function revalidateAppLayout(): void {
 export function errorMessage(error: unknown): string {
   if (error instanceof ServiceError) return error.message;
   if (error instanceof ZodError) return error.issues[0]?.message ?? 'Input tidak valid';
+  const code = (error as { code?: string } | null)?.code;
+  if (code === '23505') {
+    return 'Nama itu sudah dipakai. Gunakan nama lain.';
+  }
   if (error instanceof Error && error.message) return error.message;
   return 'Terjadi kesalahan. Coba lagi.';
 }

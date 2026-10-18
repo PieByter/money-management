@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { Archive, ArchiveRestore, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, MoreVertical, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,10 +24,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatAmount, parseAmountInput } from '@/lib/money';
+import { RECOMMENDED_WALLETS } from '@/lib/wallet-presets';
 import { walletFormSchema, type WalletFormValues } from '@/lib/schemas';
 import { cn } from '@/lib/utils';
 import { WALLET_COLORS, WALLET_ICONS, WALLET_TYPE_OPTIONS } from '@/lib/view-types';
 import {
+  createRecommendedWalletsAction,
   createWalletAction,
   deleteWalletAction,
   setWalletArchivedAction,
@@ -143,6 +145,30 @@ export function WalletFormDialog({
             ) : null}
           </div>
 
+          {!initial ? (
+            <div className="space-y-1.5">
+              <Label>Isi cepat</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {RECOMMENDED_WALLETS.map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() => {
+                      form.setValue('name', preset.name);
+                      form.setValue('type', preset.type);
+                      form.setValue('icon', preset.icon);
+                      form.setValue('color', preset.color);
+                    }}
+                    className="flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs transition-colors hover:bg-muted"
+                  >
+                    <span aria-hidden>{preset.icon}</span>
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div className="space-y-1.5">
             <Label>Jenis</Label>
             <div className="grid grid-cols-4 gap-1.5">
@@ -247,6 +273,38 @@ export function WalletCreateButton({ label = 'Tambah' }: { label?: string }) {
       </Button>
       <WalletFormDialog open={open} onOpenChange={setOpen} />
     </>
+  );
+}
+
+/** Tambah 8 kantong rekomendasi (Cash, OVO, GoPay, ShopeePay, Mandiri, Permata, Jago, e-Money). */
+export function WalletBulkCreateButton({
+  label = 'Tambah kantong rekomendasi',
+  variant = 'outline',
+}: {
+  label?: string;
+  variant?: 'outline' | 'default' | 'ghost';
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    setBusy(true);
+    const result = await createRecommendedWalletsAction();
+    setBusy(false);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success(
+      result.data.created > 0
+        ? `${result.data.created} kantong ditambahkan`
+        : 'Semua kantong rekomendasi sudah ada',
+    );
+  }
+
+  return (
+    <Button variant={variant} size="sm" className="gap-1.5" disabled={busy} onClick={() => void run()}>
+      <Sparkles className="h-4 w-4" /> {busy ? 'Menambahkan…' : label}
+    </Button>
   );
 }
 

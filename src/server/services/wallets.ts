@@ -1,4 +1,5 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { RECOMMENDED_WALLETS } from '@/lib/wallet-presets';
 import type { AppDb } from '../db/client';
 import { transactions, wallets, walletBalances, type Wallet, type WalletType } from '../db/schema';
 
@@ -77,6 +78,37 @@ async function nextSortOrder(db: AppDb, userId: string): Promise<number> {
     .from(wallets)
     .where(eq(wallets.userId, userId));
   return Number(row?.value ?? 1);
+}
+
+/**
+ * Tambahkan kantong rekomendasi (Cash, OVO, GoPay, ShopeePay, Bank Mandiri,
+ * Bank Permata, Bank Jago, Kartu e-Money) yang belum ada — idempotent
+ * (ON CONFLICT DO NOTHING pada unique index nama per user).
+ * @returns jumlah kantong yang benar-benar dibuat.
+ */
+export async function createRecommendedWallets(db: AppDb, userId: string): Promise<number> {
+  const [row] = await db
+    .select({ value: sql<number>`coalesce(max(${wallets.sortOrder}), 0)::int` })
+    .from(wallets)
+    .where(eq(wallets.userId, userId));
+  const startOrder = Number(row?.value ?? 0);
+
+  const inserted = await db
+    .insert(wallets)
+    .values(
+      RECOMMENDED_WALLETS.map((preset, index) => ({
+        userId,
+        name: preset.name,
+        type: preset.type,
+        icon: preset.icon,
+        color: preset.color,
+        sortOrder: startOrder + index + 1,
+      })),
+    )
+    .onConflictDoNothing()
+    .returning({ id: wallets.id });
+
+  return inserted.length;
 }
 
 export async function createWallet(db: AppDb, userId: string, input: WalletInput): Promise<Wallet> {

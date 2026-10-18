@@ -7,6 +7,7 @@ import { uuidSchema, walletFormSchema } from '@/lib/schemas';
 import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
 import {
+  createRecommendedWallets,
   createWallet,
   deleteWallet,
   listWallets,
@@ -15,6 +16,21 @@ import {
   type WalletWithBalance,
 } from '@/server/services/wallets';
 import { errorMessage, revalidateAppLayout } from './shared';
+
+/** Tambah kantong rekomendasi (Cash, OVO, GoPay, ShopeePay, Mandiri, Permata, Jago, e-Money). */
+export async function createRecommendedWalletsAction(): Promise<
+  ActionResult<{ created: number }>
+> {
+  try {
+    const user = await requireUser();
+    const db = await getDb();
+    const created = await createRecommendedWallets(db, user.id);
+    revalidateAppLayout();
+    return { ok: true, data: { created } };
+  } catch (error) {
+    return fail(errorMessage(error));
+  }
+}
 
 export async function listWalletsAction(): Promise<ActionResult<WalletWithBalance[]>> {
   try {

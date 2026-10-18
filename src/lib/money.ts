@@ -18,7 +18,7 @@ export function formatIdr(amount: number): string {
 export function formatIdrSigned(amount: number): string {
   if (amount > 0) return `+Rp${numberFormatter.format(amount)}`;
   if (amount < 0) return `−Rp${numberFormatter.format(Math.abs(amount))}`;
-  return 'Rp0';
+  return 'Rp 0';
 }
 
 const compactFormatter = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 });

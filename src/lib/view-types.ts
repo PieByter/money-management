@@ -40,7 +40,7 @@ export const WALLET_TYPE_OPTIONS = [
 
 export const WALLET_ICONS = [
   '💵', '💳', '🏦', '👛', '🪙', '💰', '📱', '🏧',
-  '🟢', '🟣', '🔵', '🟡', '📈', '🧧', '🏪', '🎒',
+  '🟢', '🟣', '🔵', '🟡', '🟠', '🟤', '⚫', '📈',
 ] as const;
 
 export const WALLET_COLORS = [
