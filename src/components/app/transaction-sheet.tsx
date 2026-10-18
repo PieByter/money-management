@@ -303,9 +303,9 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
   return (
     <Drawer.Root open={open} onOpenChange={onOpenChange} shouldScaleBackground={false}>
       <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/55" />
+        <Drawer.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
         <Drawer.Content
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[96dvh] flex-col rounded-t-3xl border-t border-border bg-card shadow-2xl outline-none lg:inset-y-0 lg:mx-auto lg:my-auto lg:h-fit lg:max-h-[calc(100dvh-3rem)] lg:w-[min(72rem,94vw)] lg:rounded-3xl lg:border"
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[96dvh] flex-col rounded-t-3xl border-t border-border bg-card shadow-2xl outline-none lg:inset-y-0 lg:mx-auto lg:my-auto lg:h-fit lg:max-h-[calc(100dvh-3rem)] lg:w-[min(72rem,94vw)] lg:rounded-3xl lg:border lg:ring-1 lg:ring-black/5 dark:lg:ring-white/10"
           aria-describedby={undefined}
         >
           <Drawer.Title className="sr-only">
