@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 
 export type NumpadKey =
   | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '0'
-  | 'rb'
+  | '000'
   | 'back'
   | 'clear';
 
@@ -18,8 +18,8 @@ const ROWS: NumpadKey[][] = [
 
 /**
  * Numpad besar untuk input cepat satu tangan (PRD 5.3).
- * Tiga kolom agar tombolnya lega; pengali ribuan (`rb` = ×1000) jadi satu tombol
- * lebar di bawah karena "rb" dan "000" sebenarnya sama saja.
+ * Tiga kolom agar tombolnya lega; penambah ribuan (`000`) jadi satu tombol lebar
+ * di bawah.
  */
 export function Numpad({ onKey }: { onKey: (key: NumpadKey) => void }) {
   return (
@@ -56,12 +56,11 @@ export function Numpad({ onKey }: { onKey: (key: NumpadKey) => void }) {
       </div>
       <button
         type="button"
-        onClick={() => onKey('rb')}
-        aria-label="Kali seribu (ribu)"
-        className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-secondary text-base font-semibold text-primary transition-colors active:scale-[0.99] lg:h-12"
+        onClick={() => onKey('000')}
+        aria-label="Tambah tiga nol"
+        className="flex h-11 w-full items-center justify-center rounded-xl bg-secondary text-2xl font-medium text-foreground transition-colors active:scale-[0.99] lg:h-12"
       >
-        rb
-        <span className="text-xs font-normal text-muted-foreground">×1.000</span>
+        000
       </button>
     </div>
   );
@@ -73,8 +72,8 @@ function keyLabel(key: NumpadKey): string {
       return 'Hapus satu angka';
     case 'clear':
       return 'Kosongkan nominal';
-    case 'rb':
-      return 'Kali seribu (ribu)';
+    case '000':
+      return 'Tambah tiga nol';
     default:
       return `Angka ${key}`;
   }

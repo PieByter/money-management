@@ -38,7 +38,7 @@ function newRequestId(): string {
 function appendKey(prev: string, key: NumpadKey): string {
   if (key === 'back') return prev.slice(0, -1);
   if (key === 'clear') return '';
-  if (key === 'rb') return prev === '' ? prev : `${prev}000`.slice(0, 15);
+  if (key === '000') return prev === '' ? prev : `${prev}000`.slice(0, 15);
   if (prev === '0') return key;
   return `${prev}${key}`.slice(0, 15);
 }
