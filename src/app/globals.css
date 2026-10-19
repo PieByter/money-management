@@ -138,14 +138,20 @@
   }
 }
 
+/*
+ * Dialog sudah dipusatkan oleh utility Tailwind (-translate-x-1/2 -translate-y-1/2)
+ * yang memakai properti `translate`. Karena itu keyframes HANYA boleh menganimasikan
+ * opacity + `scale`; kalau memakai `transform: translate(...)` di sini, pusatnya
+ * tergeser dobel (muncul di kiri-atas) lalu melompat ke tengah saat animasi selesai.
+ */
 @keyframes dialog-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -48%) scale(0.97);
+    scale: 0.97;
   }
   to {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    scale: 1;
   }
 }
 

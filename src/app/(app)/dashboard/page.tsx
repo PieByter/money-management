@@ -6,10 +6,12 @@ import { StaticTransactionList } from '@/components/app/transaction-list';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { eachDayInRange, jakartaYearMonth, monthKey, monthRangeFromKey } from '@/lib/dates';
 import { formatIdr } from '@/lib/money';
+import { cn } from '@/lib/utils';
 import { monthKeySchema } from '@/lib/schemas';
 import { WALLET_TYPE_LABELS } from '@/lib/view-types';
 import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
+import { getBudgetProgress } from '@/server/services/budgets';
 import {
   getAssetOverview,
   getCategoryTotals,
@@ -33,12 +35,13 @@ export default async function DashboardPage({
   const db = await getDb();
   const range = monthRangeFromKey(month);
 
-  const [summary, assets, categoryTotals, daily, recent] = await Promise.all([
+  const [summary, assets, categoryTotals, daily, recent, budgetProgress] = await Promise.all([
     getMonthSummary(db, user.id, month),
     getAssetOverview(db, user.id),
     getCategoryTotals(db, user.id, range),
     getDailyTotals(db, user.id, range),
     getRecentTransactions(db, user.id, 5),
+    getBudgetProgress(db, user.id, month),
   ]);
 
   const dailyData = eachDayInRange(range.start, range.end).map((ymd) => ({
@@ -116,6 +119,51 @@ export default async function DashboardPage({
           </div>
         )}
       </section>
+
+      {budgetProgress.length > 0 ? (
+        <section>
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold">Budget</h2>
+            <Link href="/settings#budget" className="text-xs font-medium text-primary hover:underline">
+              Kelola budget
+            </Link>
+          </div>
+          <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
+            {budgetProgress.map((budget) => (
+              <div key={budget.categoryId}>
+                <div className="flex items-baseline justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate font-medium">
+                    {budget.icon ? `${budget.icon} ` : ''}
+                    {budget.name}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                    {formatIdr(budget.spent)} / {formatIdr(budget.limit)}
+                  </span>
+                </div>
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn(
+                      'h-full rounded-full',
+                      budget.over ? 'bg-expense' : budget.ratio >= 0.8 ? 'bg-primary/70' : 'bg-primary',
+                    )}
+                    style={{ width: `${Math.min(Math.round(budget.ratio * 100), 100)}%` }}
+                  />
+                </div>
+                <p
+                  className={cn(
+                    'mt-1 text-[11px]',
+                    budget.over ? 'font-medium text-expense' : 'text-muted-foreground',
+                  )}
+                >
+                  {budget.over
+                    ? `Lewat ${formatIdr(budget.spent - budget.limit)} dari batas`
+                    : `Sisa ${formatIdr(budget.remaining)}`}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

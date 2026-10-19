@@ -92,6 +92,46 @@ export async function getCategoryTotals(
   };
 }
 
+export interface TagTotal {
+  tag: string;
+  total: number;
+}
+
+/** Total per tag dalam rentang tanggal — dihitung dari array `tags` transaksi. */
+export async function getTagTotals(
+  db: AppDb,
+  userId: string,
+  range: { start: Date; end: Date },
+): Promise<{ expense: TagTotal[]; income: TagTotal[] }> {
+  const rows = await db
+    .select({
+      tag: sql<string>`tag_name`,
+      kind: sql<string>`kind`,
+      total: sql<number>`sum(${transactions.amount})::bigint`,
+    })
+    .from(sql`${transactions}, unnest(${transactions.tags}) as tag_name`)
+    .where(
+      sql`${transactions.userId} = ${userId}
+          and ${transactions.deletedAt} is null
+          and ${transactions.status} = 'confirmed'
+          and ${transactions.kind} in ('income','expense')
+          and ${transactions.occurredAt} >= ${range.start}
+          and ${transactions.occurredAt} < ${range.end}`,
+    )
+    .groupBy(sql`tag_name, kind`)
+    .orderBy(sql`sum(${transactions.amount}) desc`);
+
+  const mapped = rows.map((row) => ({
+    tag: row.tag,
+    kind: row.kind as 'income' | 'expense',
+    total: numberOrZero(row.total),
+  }));
+  return {
+    expense: mapped.filter((row) => row.kind === 'expense'),
+    income: mapped.filter((row) => row.kind === 'income'),
+  };
+}
+
 export interface DailyTotal {
   ymd: string;
   income: number;

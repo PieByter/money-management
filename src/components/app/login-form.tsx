@@ -123,7 +123,7 @@ export function LoginForm({
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center px-5 py-10">
-      <div className="w-full max-w-sm space-y-6">
+      <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="text-center">
           <div className="text-4xl" aria-hidden>
             💰
@@ -185,7 +185,7 @@ export function LoginForm({
             </Button>
           </div>
         ) : (
-          <form onSubmit={submit} className="space-y-3">
+          <form onSubmit={submit} className="flex flex-col gap-5">
             <div className="space-y-1.5">
               <label htmlFor="login-email" className="text-sm font-medium">
                 Email
@@ -232,7 +232,7 @@ export function LoginForm({
               </div>
             ) : null}
 
-            <Button type="submit" className="w-full gap-2" disabled={busy}>
+            <Button type="submit" className="mt-3 w-full gap-2" disabled={busy}>
               {mode === 'forgot' ? <Send className="h-4 w-4" /> : <LogIn className="h-4 w-4" />}
               {busy
                 ? 'Memproses…'
@@ -258,13 +258,6 @@ export function LoginForm({
           </form>
         )}
 
-        {mode === 'signup' ? (
-          <p className="text-xs text-muted-foreground">
-            Pendaftaran langsung aktif (tanpa verifikasi email) jika opsi <b>Confirm email</b>{' '}
-            dimatikan di Supabase → Authentication → Sign In / Providers → Email.
-          </p>
-        ) : null}
-
         {notice ? (
           <p className="rounded-xl border border-border bg-card px-3 py-2.5 text-xs text-muted-foreground">
             {notice}
@@ -272,7 +265,7 @@ export function LoginForm({
         ) : null}
 
         {googleEnabled && mode !== 'forgot' ? (
-          <>
+          <div className="mt-2 flex flex-col gap-6">
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               <span className="h-px flex-1 bg-border" />
               atau
@@ -285,7 +278,7 @@ export function LoginForm({
             >
               <span aria-hidden>🔵</span> Lanjutkan dengan Google
             </Button>
-          </>
+          </div>
         ) : null}
 
         <p className="text-center text-xs text-muted-foreground">

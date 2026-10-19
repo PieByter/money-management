@@ -2,6 +2,7 @@
 
 import type { ActionResult } from '@/lib/action-types';
 import { fail } from '@/lib/action-types';
+import { z } from 'zod';
 import { jakartaYmd, resolveOccurredAt } from '@/lib/dates';
 import {
   listTransactionsSchema,
@@ -22,8 +23,10 @@ import {
   getTransactionDetail,
   listTransactions,
   reconcileWallet,
+  restoreTransactions,
   updateTransaction,
   updateTransfer,
+  type DeleteResult,
   type ReconcileResult,
   type TransactionDetail,
   type TransactionListItem,
@@ -52,6 +55,7 @@ export async function createTransactionAction(
       occurredAt: resolveOccurredAt(values.date),
       note: values.note?.trim() ? values.note : null,
       tags: values.tags,
+      items: values.kind === 'expense' ? values.items : undefined,
       clientRequestId: values.clientRequestId ?? null,
     });
     revalidateAppData();
@@ -104,6 +108,7 @@ export async function updateTransactionAction(input: unknown): Promise<ActionRes
       occurredAt: occurredAtForEdit(detail.transaction.occurredAt, values.date),
       note: values.note?.trim() ? values.note : values.note,
       tags: values.tags,
+      items: values.items,
     });
     revalidateAppData();
     return { ok: true, data: undefined };
@@ -141,14 +146,31 @@ export async function updateTransferAction(input: unknown): Promise<ActionResult
   }
 }
 
-export async function deleteTransactionAction(transactionId: string): Promise<ActionResult> {
+export async function deleteTransactionAction(
+  transactionId: string,
+): Promise<ActionResult<DeleteResult>> {
   try {
     const user = await requireUser();
     const id = uuidSchema.parse(transactionId);
     const db = await getDb();
-    await deleteTransaction(db, user.id, id);
+    const result = await deleteTransaction(db, user.id, id);
     revalidateAppData();
-    return { ok: true, data: undefined };
+    return { ok: true, data: result };
+  } catch (error) {
+    return fail(errorMessage(error));
+  }
+}
+
+export async function restoreTransactionsAction(
+  transactionIds: string[],
+): Promise<ActionResult<{ restored: number }>> {
+  try {
+    const user = await requireUser();
+    const ids = z.array(uuidSchema).min(1).max(20).parse(transactionIds);
+    const db = await getDb();
+    const restored = await restoreTransactions(db, user.id, ids);
+    revalidateAppData();
+    return { ok: true, data: { restored } };
   } catch (error) {
     return fail(errorMessage(error));
   }
@@ -167,6 +189,7 @@ export async function listTransactionsAction(
         walletId: values.walletId ?? undefined,
         categoryId: values.categoryId ?? undefined,
         kind: values.kind ?? undefined,
+        tag: values.tag ?? undefined,
         search: values.search ?? undefined,
       },
       cursor: values.cursor ?? null,

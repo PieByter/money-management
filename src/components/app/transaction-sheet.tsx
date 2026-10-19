@@ -16,10 +16,13 @@ import {
   createTransferAction,
   deleteTransactionAction,
   getTransactionDetailAction,
+  restoreTransactionsAction,
   updateTransactionAction,
   updateTransferAction,
 } from '@/server/actions/transactions';
 import { Numpad, type NumpadKey } from './numpad';
+import { DatePicker } from './date-picker';
+import { ItemLines, linesTotal, makeItemLine, type ItemLineDraft } from './item-lines';
 
 const SEGMENTS: { value: SheetMode; label: string }[] = [
   { value: 'expense', label: 'Keluar' },
@@ -35,7 +38,6 @@ function newRequestId(): string {
 function appendKey(prev: string, key: NumpadKey): string {
   if (key === 'back') return prev.slice(0, -1);
   if (key === 'clear') return '';
-  if (key === 'rb') return prev === '' ? prev : `${prev}000`.slice(0, 15);
   if (key === '000') return prev === '' ? prev : `${prev}000`.slice(0, 15);
   if (prev === '0') return key;
   return `${prev}${key}`.slice(0, 15);
@@ -68,7 +70,7 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
   const [busy, setBusy] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [editKind, setEditKind] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [itemLines, setItemLines] = useState<ItemLineDraft[]>([]);
   const router = useRouter();
 
   const isTransferEdit = editKind === 'transfer_in' || editKind === 'transfer_out';
@@ -88,12 +90,12 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
   useEffect(() => {
     if (!open) return;
     setBusy(false);
-    setConfirmDelete(false);
     setRequestId(newRequestId());
     setDateYmd(jakartaYmd(new Date()));
     setNote('');
     setTagsRaw('');
     setFeeDigits('');
+    setItemLines([]);
 
     if (editId) {
       setLoadingEdit(true);
@@ -104,12 +106,22 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
           onOpenChange(false);
           return;
         }
-        const { transaction, transfer } = result.data;
+        const { transaction, transfer, items } = result.data;
         setEditKind(transaction.kind);
         setDigits(String(transaction.amount));
         setDateYmd(jakartaYmd(new Date(transaction.occurredAt)));
         setNote(transaction.note ?? '');
         setTagsRaw((transaction.tags ?? []).join(', '));
+        setItemLines(
+          items.map((line) =>
+            makeItemLine({
+              itemId: line.itemId,
+              name: line.name,
+              amount: line.amount,
+              qtyMilli: line.qtyMilli,
+            }),
+          ),
+        );
         if (transfer) {
           setMode('transfer');
           setFromWalletId(transfer.fromWalletId);
@@ -148,10 +160,28 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
       .filter(Boolean)
       .slice(0, 10);
     const cleanNote = note.trim() ? note.trim() : null;
+    const cleanLines = itemLines
+      .filter((line) => line.name.trim() && line.amount > 0)
+      .map((line) => ({
+        itemId: line.itemId,
+        name: line.name.trim(),
+        amount: line.amount,
+        qtyMilli: line.qtyMilli,
+      }));
 
     if (amount <= 0) {
       toast.error('Isi nominal dulu');
       return;
+    }
+    if (mode === 'expense' && cleanLines.length > 0) {
+      const linesSum = cleanLines.reduce((sum, line) => sum + line.amount, 0);
+      if (linesSum > amount) {
+        toast.error(
+          `Total rincian item (${formatIdr(linesSum)}) melebihi nominal (${formatIdr(amount)}). ` +
+            'Samakan dulu nominalnya.',
+        );
+        return;
+      }
     }
     if (mode === 'transfer') {
       if (!fromWalletId || !toWalletId) {
@@ -190,6 +220,7 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
                 date: dateYmd,
                 note: cleanNote,
                 tags: parsedTags,
+                items: cleanLines,
               });
         if (result.ok) {
           toast.success('Perubahan tersimpan');
@@ -219,6 +250,7 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
               date: dateYmd,
               note: cleanNote,
               tags: parsedTags,
+              items: cleanLines,
               clientRequestId: requestId,
             });
       if (result.ok) {
@@ -231,7 +263,7 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
       setBusy(false);
     }
   }, [
-    amount, busy, categoryId, dateYmd, editId, fee, fromWalletId, loadingEdit, mode, note, onOpenChange, requestId, tagsRaw, toWalletId,
+    amount, busy, categoryId, dateYmd, editId, fee, fromWalletId, itemLines, loadingEdit, mode, note, onOpenChange, requestId, tagsRaw, toWalletId,
   ]);
 
   // Dukungan keyboard untuk desktop (angka, backspace, Enter).
@@ -246,6 +278,8 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
       const typing =
         target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
       if (typing) return;
+      // Dialog di atas sheet (mis. date picker) memakai keyboardnya sendiri.
+      if (document.querySelector('[data-lock-sheet-keys]')) return;
       if (/^[0-9]$/.test(event.key)) {
         event.preventDefault();
         pressKey(event.key as NumpadKey);
@@ -263,20 +297,31 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
 
   async function handleDelete() {
     if (!editId) return;
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      setTimeout(() => setConfirmDelete(false), 3000);
-      return;
-    }
     setBusy(true);
     const result = await deleteTransactionAction(editId);
     setBusy(false);
-    if (result.ok) {
-      toast.success('Transaksi dihapus');
-      onOpenChange(false);
-    } else {
+    if (!result.ok) {
       toast.error(result.error);
+      return;
     }
+    const removedIds = result.data.ids;
+    onOpenChange(false);
+    toast.success(isTransferEdit ? 'Transfer dihapus' : 'Transaksi dihapus', {
+      duration: 6000,
+      action: {
+        label: 'Urungkan',
+        onClick: () => {
+          void (async () => {
+            const restored = await restoreTransactionsAction(removedIds);
+            if (!restored.ok) {
+              toast.error(restored.error);
+              return;
+            }
+            toast.success('Transaksi dikembalikan');
+          })();
+        },
+      },
+    });
   }
 
   const wallets = data.wallets;
@@ -306,7 +351,7 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
         {/* Overlay transparan: tetap ada agar klik di luar menutup panel, tanpa peredupan. */}
         <Drawer.Overlay className="fixed inset-0 z-40 bg-transparent" />
         <Drawer.Content
-          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[96dvh] flex-col rounded-t-3xl border-t border-border bg-card shadow-2xl outline-none lg:inset-y-0 lg:mx-auto lg:my-auto lg:h-fit lg:max-h-[calc(100dvh-3rem)] lg:w-[min(72rem,94vw)] lg:rounded-3xl lg:border lg:ring-1 lg:ring-black/5 dark:lg:ring-white/10 lg:after:hidden! [will-change:auto]!"
+          className="fixed inset-x-0 bottom-0 z-50 flex max-h-[96dvh] flex-col rounded-t-3xl border-t border-border bg-card shadow-2xl outline-none lg:inset-y-0 lg:mx-auto lg:my-auto lg:h-fit lg:max-h-[calc(100dvh-3rem)] lg:w-[min(80rem,96vw)] lg:rounded-3xl lg:border lg:ring-1 lg:ring-black/5 dark:lg:ring-white/10 lg:after:hidden! [will-change:auto]!"
         aria-describedby={undefined}
           >
           <Drawer.Title className="sr-only">
@@ -317,7 +362,7 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
             aria-hidden
           />
 
-          <div className="mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:max-w-6xl lg:py-2">
+          <div className="mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden lg:max-w-7xl lg:py-2">
             <div className="flex items-center justify-between gap-2 px-4 pt-2.5 lg:px-6">
               <div className="flex rounded-xl bg-muted p-1" role="tablist" aria-label="Tipe transaksi">
                 {SEGMENTS.map((segment) => {
@@ -349,24 +394,19 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
               {editId ? (
                 <button
                   type="button"
-                  onClick={handleDelete}
+                  onClick={() => void handleDelete()}
                   disabled={busy}
-                  aria-label={confirmDelete ? 'Konfirmasi hapus transaksi' : 'Hapus transaksi'}
-                  className={cn(
-                    'flex h-9 items-center gap-1.5 rounded-xl px-3 text-sm transition-colors',
-                    confirmDelete
-                      ? 'bg-destructive text-destructive-foreground'
-                      : 'text-destructive hover:bg-destructive/10',
-                  )}
+                  aria-label={isTransferEdit ? 'Hapus transfer ini' : 'Hapus transaksi ini'}
+                  className="flex h-9 items-center gap-1.5 rounded-xl bg-destructive/10 px-3 text-sm text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground"
                 >
                   <Trash2 className="h-4 w-4" />
-                  {confirmDelete ? 'Yakin?' : ''}
+                  Hapus
                 </button>
               ) : null}
             </div>
 
             {/* Layar lebar: dua kolom — form (kiri) + numpad & simpan (kanan). */}
-            <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-8 lg:px-8">
+            <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_26rem] lg:gap-8 lg:px-8">
               <div className="flex min-h-0 flex-col overflow-y-auto px-4 pt-2 lg:px-0 lg:pt-4">
                 <div className="py-2 text-center lg:pb-4 lg:pt-0 lg:text-left">
                 <div
@@ -477,14 +517,10 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
                   >
                     Kemarin
                   </button>
-                  <input
-                    type="date"
+                  <DatePicker
                     value={dateYmd}
-                    onChange={(event) => {
-                      if (event.target.value) setDateYmd(event.target.value);
-                    }}
-                    className="h-9 rounded-xl border border-input bg-card px-2.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    aria-label="Tanggal transaksi"
+                    onChange={setDateYmd}
+                    disabled={busy || loadingEdit}
                   />
                 </div>
 
@@ -526,6 +562,17 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
                   className="sm:col-span-2"
                 />
               </section>
+
+              {mode === 'expense' ? (
+                <ItemLines
+                  lines={itemLines}
+                  setLines={setItemLines}
+                  suggestions={data.frequentItems}
+                  total={amount}
+                  onUseLinesTotal={() => setDigits(String(linesTotal(itemLines)))}
+                  disabled={busy || loadingEdit}
+                />
+              ) : null}
               </div>
 
               <div className="shrink-0 border-t border-border px-4 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2.5 lg:flex lg:flex-col lg:justify-center lg:border-l lg:border-t-0 lg:pb-6 lg:pl-8 lg:pt-2">
@@ -608,7 +655,7 @@ function WalletChips({
     );
   }
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="no-scrollbar flex flex-nowrap gap-2 overflow-x-auto lg:flex-wrap lg:overflow-visible">
       {wallets.map((wallet) => {
         const active = wallet.id === value;
         const disabled = wallet.id === excludeId;
@@ -645,7 +692,7 @@ function CategoryChips({
   onChange: (id: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="no-scrollbar flex flex-nowrap gap-2 overflow-x-auto lg:flex-wrap lg:overflow-visible">
       {categories.map((category) => {
         const active = category.id === value;
         return (

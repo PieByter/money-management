@@ -21,6 +21,8 @@ export interface DisplayTransaction {
   note: string | null;
   icon: string | null;
   color: string | null;
+  /** Jumlah baris rincian item (0 = tidak dirinci). */
+  itemCount: number;
 }
 
 function mapSingle(item: TransactionListItem, key: string): DisplayTransaction {
@@ -34,6 +36,7 @@ function mapSingle(item: TransactionListItem, key: string): DisplayTransaction {
     note: item.note,
     icon: item.categoryIcon,
     color: item.categoryColor,
+    itemCount: item.itemCount,
   };
 
   if (item.kind === 'income' || item.kind === 'expense') {

@@ -17,11 +17,19 @@ export interface CategoryOption {
   color: string | null;
 }
 
+export interface ItemChip {
+  id: string;
+  name: string;
+  lastPrice: number | null;
+}
+
 export interface SheetData {
   wallets: WalletOption[];
   expenseCategories: CategoryOption[];
   incomeCategories: CategoryOption[];
   lastUsedWalletId: string | null;
+  /** Item yang sering dibeli — chip cepat untuk mode belanja itemized. */
+  frequentItems: ItemChip[];
 }
 
 export const WALLET_TYPE_LABELS: Record<string, string> = {

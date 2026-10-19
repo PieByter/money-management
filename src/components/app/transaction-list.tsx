@@ -9,7 +9,7 @@ import { formatIdr } from '@/lib/money';
 import { groupByDay, toDisplayTransactions, type DisplayTransaction } from '@/lib/transactions-view';
 import { cn } from '@/lib/utils';
 import type { TransactionListItem } from '@/server/services/transactions';
-import { deleteTransactionAction, listTransactionsAction } from '@/server/actions/transactions';
+import { deleteTransactionAction, listTransactionsAction, restoreTransactionsAction } from '@/server/actions/transactions';
 import { AmountText } from './amount-text';
 import { useTransactionSheet } from './transaction-sheet-provider';
 
@@ -18,6 +18,7 @@ export interface ListFilterValues {
   walletId?: string | null;
   categoryId?: string | null;
   kind?: 'income' | 'expense' | 'transfer' | 'adjustment' | null;
+  tag?: string | null;
   search?: string | null;
 }
 
@@ -34,15 +35,18 @@ function subtitleFor(item: DisplayTransaction): string {
   if (item.kind !== 'transfer') parts.push(item.walletName);
   parts.push(timeLabel(item.occurredAt));
   if (item.note) parts.push(item.note);
+  if (item.itemCount > 0) parts.push(`🧾 ${item.itemCount} item`);
   return parts.join(' · ');
 }
 
 export function TransactionRow({
   item,
   onClick,
+  onDelete,
 }: {
   item: DisplayTransaction;
   onClick?: () => void;
+  onDelete?: () => void;
 }) {
   const content = (
     <>
@@ -61,6 +65,36 @@ export function TransactionRow({
     </>
   );
 
+  if (onDelete) {
+    return (
+      <div className="group flex w-full items-center gap-1 pr-2">
+        {onClick ? (
+          <button
+            type="button"
+            onClick={onClick}
+            className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60"
+          >
+            {content}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3">{content}</div>
+        )}
+        <button
+          type="button"
+          onPointerDownCapture={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+          aria-label={`Hapus ${item.title}`}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  }
+
   if (onClick) {
     return (
       <button
@@ -72,6 +106,7 @@ export function TransactionRow({
       </button>
     );
   }
+
   return <div className="flex w-full items-center gap-3 px-4 py-3">{content}</div>;
 }
 
@@ -225,19 +260,34 @@ export function TransactionList({
         toast.error(result.error);
         return;
       }
-      toast.success('Transaksi dihapus');
-      setHiddenIds((prev) => {
-        const next = new Set(prev);
-        next.add(item.primaryId);
-        if (item.groupId) {
-          for (const raw of items) {
-            if (raw.groupId === item.groupId) next.add(raw.id);
-          }
-        }
-        return next;
-      });
+      const removedIds = result.data.ids;
+      setHiddenIds((prev) => new Set([...prev, ...removedIds]));
+      toast.success(
+        item.kind === 'transfer' ? 'Transfer dihapus' : 'Transaksi dihapus',
+        {
+          duration: 6000,
+          action: {
+            label: 'Urungkan',
+            onClick: () => {
+              void (async () => {
+                const restored = await restoreTransactionsAction(removedIds);
+                if (!restored.ok) {
+                  toast.error(restored.error);
+                  return;
+                }
+                setHiddenIds((prev) => {
+                  const next = new Set(prev);
+                  for (const id of removedIds) next.delete(id);
+                  return next;
+                });
+                toast.success('Transaksi dikembalikan');
+              })();
+            },
+          },
+        },
+      );
     },
-    [items],
+    [],
   );
 
   const visible = useMemo(
@@ -274,7 +324,7 @@ export function TransactionList({
                 onEdit={() => openEdit(item.primaryId)}
                 onDelete={() => void handleDelete(item)}
               >
-                <TransactionRow item={item} />
+                <TransactionRow item={item} onDelete={() => void handleDelete(item)} />
               </SwipeRow>
             ))}
           </div>

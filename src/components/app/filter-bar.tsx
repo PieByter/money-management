@@ -17,9 +17,11 @@ const KIND_CHIPS = [
 export function FilterBar({
   wallets,
   categories,
+  tags = [],
 }: {
   wallets: { id: string; name: string; icon: string | null }[];
   categories: { id: string; name: string; kind: string }[];
+  tags?: { tag: string; usage: number }[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -53,8 +55,11 @@ export function FilterBar({
   const kindValue = searchParams.get('jenis') ?? '';
   const walletValue = searchParams.get('kantong') ?? '';
   const categoryValue = searchParams.get('kategori') ?? '';
+  const tagValue = searchParams.get('tag') ?? '';
   const monthValue = searchParams.get('m') ?? '';
-  const hasFilters = Boolean(kindValue || walletValue || categoryValue || monthValue || query);
+  const hasFilters = Boolean(
+    kindValue || walletValue || categoryValue || tagValue || monthValue || query,
+  );
 
   const currentMonthKey = monthKey(jakartaYearMonth());
   const monthOptions = Array.from({ length: 15 }, (_, index) =>
@@ -145,6 +150,22 @@ export function FilterBar({
               ))}
           </optgroup>
         </select>
+
+        {tags.length > 0 ? (
+          <select
+            value={tagValue}
+            onChange={(event) => update({ tag: event.target.value || null })}
+            aria-label="Filter tag"
+            className="h-9 shrink-0 rounded-xl border border-border bg-card px-2.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="">Semua tag</option>
+            {tags.map((entry) => (
+              <option key={entry.tag} value={entry.tag}>
+                #{entry.tag}
+              </option>
+            ))}
+          </select>
+        ) : null}
 
         <select
           value={monthValue}

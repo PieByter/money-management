@@ -334,11 +334,31 @@ export function WalletActionsMenu({ wallet }: { wallet: WalletTarget }) {
       toast.error(result.error);
       return;
     }
-    if (result.data.deleted) {
-      toast.success('Kantong dihapus');
-    } else {
+    if (!result.data.deleted) {
       toast.error('Kantong punya transaksi — gunakan arsipkan agar riwayat tetap utuh.');
+      return;
     }
+    toast.success('Kantong dihapus', {
+      duration: 6000,
+      action: {
+        label: 'Urungkan',
+        onClick: () => {
+          void (async () => {
+            const restored = await createWalletAction({
+              name: wallet.name,
+              type: wallet.type,
+              icon: wallet.icon,
+              color: wallet.color,
+            });
+            if (!restored.ok) {
+              toast.error(restored.error);
+              return;
+            }
+            toast.success('Kantong dikembalikan');
+          })();
+        },
+      },
+    });
   }
 
   return (
