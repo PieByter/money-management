@@ -142,6 +142,61 @@ export const budgets = pgTable(
 );
 
 /**
+ * Katalog item yang bisa dipakai ulang saat belanja (mode itemized).
+ * `lastPrice` menyimpan harga terakhir agar entri berikutnya tinggal tap.
+ */
+export const items = pgTable(
+  'items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    name: text('name').notNull(),
+    unit: text('unit'),
+    lastPrice: bigint('last_price', { mode: 'number' }),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('items_user_name_uq')
+      .on(t.userId, sql`lower(${t.name})`)
+      .where(sql`${t.archivedAt} is null`),
+    index('items_user_idx').on(t.userId),
+    index('items_category_idx').on(t.categoryId),
+    check('items_last_price_check', sql`${t.lastPrice} is null or ${t.lastPrice} > 0`),
+  ],
+);
+
+/**
+ * Rincian item pada satu transaksi. `name` disalin sebagai snapshot supaya
+ * riwayat tetap utuh walau item katalognya dihapus; `amount` = total baris
+ * (integer rupiah) dan `qtyMilli` = jumlah × 1000 agar bebas float.
+ */
+export const transactionItems = pgTable(
+  'transaction_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    transactionId: uuid('transaction_id')
+      .notNull()
+      .references(() => transactions.id, { onDelete: 'cascade' }),
+    itemId: uuid('item_id').references(() => items.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    qtyMilli: bigint('qty_milli', { mode: 'number' }).notNull().default(1000),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('transaction_items_transaction_idx').on(t.transactionId),
+    index('transaction_items_item_idx').on(t.itemId),
+    index('transaction_items_user_idx').on(t.userId),
+    check('transaction_items_amount_check', sql`${t.amount} > 0`),
+    check('transaction_items_qty_check', sql`${t.qtyMilli} > 0`),
+  ],
+);
+
+/**
  * Saldo kantong selalu dihitung dari ledger (bukan kolom yang diedit manual).
  * Hanya transaksi confirmed & belum dihapus yang dihitung.
  */
@@ -178,3 +233,5 @@ export type Wallet = typeof wallets.$inferSelect;
 export type Category = typeof categories.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
 export type Budget = typeof budgets.$inferSelect;
+export type Item = typeof items.$inferSelect;
+export type TransactionItem = typeof transactionItems.$inferSelect;

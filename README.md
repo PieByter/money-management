@@ -13,7 +13,8 @@ riwayat dengan filter, rekonsiliasi, laporan, dan ekspor CSV.
 - **Transaksi**: pengeluaran, pemasukan, dan **transfer dua-leg** (bukan pemasukan/pengeluaran)
   dengan biaya admin opsional dalam satu `group_id`.
 - **Bottom sheet input cepat**: segmented tipe, numpad besar (`rb` = ×1000), chip kantong &
-  kategori (paling sering dipakai di depan), tanggal Hari ini/Kemarin, catatan, tag.
+  kategori (paling sering dipakai di depan), **date picker kalender** (hari ini/kemarin atau
+  ketuk tanggal di kalender — tanpa mengetik), catatan, tag.
 - **Riwayat**: grup per hari + subtotal harian, filter (tipe/kantong/kategori/**tag**/bulan),
   pencarian (catatan, kategori, dan tag), infinite scroll, swipe/tombol untuk ubah & hapus,
   tap untuk edit.
@@ -24,6 +25,11 @@ riwayat dengan filter, rekonsiliasi, laporan, dan ekspor CSV.
   transaksi terbaru.
 - **Budget bulanan per kategori** (opsional, diatur di Pengaturan): isi batas → progress bar di
   dashboard (sisa/lebih), dan tiap budget bisa **dinyalakan/dimatikan** tanpa kehilangan angkanya.
+- **Rincian item (mode belanja)**: untuk transaksi pengeluaran bisa dicatat barang satu per satu
+  (nama, jumlah, harga) — dihitung bebas AI. Total rincian tidak boleh melebihi nominal, dan
+  selisih yang belum dirinci boleh dibiarkan. Item katalog terbentuk otomatis dari nama barang.
+- **Item & harga** (Pengaturan → Item & harga): katalog barang yang pernah dibeli, berapa kali
+  dibeli, harga terakhir, plus grafik riwayat harga satuan (terendah/tertinggi/perubahan).
 - **Laporan**: perbandingan bulan ini vs bulan lalu, tren 6 bulan, breakdown kategori, dan
   **breakdown per tag** (klik tag → riwayat terfilter).
 - **Rekonsiliasi**: masukkan saldo riil → selisih dicatat sebagai adjustment.
@@ -59,6 +65,15 @@ Izinkan node.exe saat Windows Firewall bertanya.
 > dan hanya di origin yang aman (HTTPS atau localhost). Lewat LAN/HTTP aplikasi tetap jalan
 > penuh di browser, tetapi "Install app"/offline shell baru aktif setelah di-deploy ke HTTPS
 > (mis. Vercel) — lihat bagian Deploy.
+
+> Service worker **tidak** meng-cache aset build (`/_next/*`): nama chunk di dev itu stabil,
+> jadi cache-first pernah menyajikan JS lama setelah kode berubah dan memicu error hydration
+> React (#418). Yang di-cache hanya halaman hasil navigasi (network-first, untuk mode offline)
+> plus ikon & manifest. Cache diberi versi (`money-tracker-v2`), jadi versi lama otomatis
+> dibuang saat service worker baru aktif.
+> Kalau aplikasi terasa memakai versi lama: DevTools → Application → Service Workers →
+> *Unregister*, lalu hard reload. Bump `CACHE` di [`public/sw.js`](./public/sw.js) saat aturan
+> cache diubah.
 
 ## Mode Supabase (multi-user / produksi)
 
@@ -188,14 +203,14 @@ Cara kerja:
 ```
 src/
   app/                # Next.js App Router
-    (app)/            # area terautentikasi: dashboard, transactions, wallets, reports, settings
+    (app)/            # area terautentikasi: dashboard, transactions, wallets, reports, items, settings
     (auth)/login      # login Supabase (mode lokal auto-redirect)
     api/export        # ekspor CSV
     manifest.ts, icon.png, apple-icon.png   # PWA
   components/app/     # AppShell (bottom nav/sidebar), sheet transaksi + numpad, daftar transaksi, dll.
   server/
     db/               # schema Drizzle + client (PGlite ⇄ Postgres) + view wallet_balances
-    services/         # transaksi (ledger), wallet, kategori, laporan — domain logic murni
+    services/         # transaksi (ledger), wallet, kategori, item, budget, laporan — domain logic murni
     actions/          # Server Actions (validasi Zod + auth + revalidate)
   lib/                # money (integer), dates (WIB), zod schemas, view types
 drizzle/              # migrasi SQL (dipakai lokal & Supabase; termasuk RLS)
@@ -215,6 +230,10 @@ Keputusan penting (sesuai PRD):
   Hapus bisa diurungkan (`restoreTransactions` mengosongkan `deleted_at` untuk baris satu group).
 - **Budget** hanya boleh menempel ke kategori pengeluaran milik user sendiri (dijaga di service
   layer, bukan hanya di UI); progress dihitung dari ledger bulan berjalan.
+- **Rincian item** disimpan di `transaction_items` dengan `name` sebagai snapshot (riwayat tetap
+  utuh walau item katalognya dihapus) dan `qty_milli` = jumlah × 1000 agar tetap integer. Total
+  rincian divalidasi ≤ nominal transaksi di service layer, dan penyimpanannya satu transaksi DB
+  bersama transaksinya. Item katalog (`items`) di-*upsert* otomatis dari nama + harga terakhir.
 - **Zona waktu**: batas bulan & tren harian dihitung WIB di SQL
   (`occurred_at + 7 jam` → hari WIB), bukan zona server.
 - **RLS** sebagai backstop di Supabase; service layer juga selalu memfilter `user_id`.

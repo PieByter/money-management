@@ -55,6 +55,7 @@ export async function createTransactionAction(
       occurredAt: resolveOccurredAt(values.date),
       note: values.note?.trim() ? values.note : null,
       tags: values.tags,
+      items: values.kind === 'expense' ? values.items : undefined,
       clientRequestId: values.clientRequestId ?? null,
     });
     revalidateAppData();
@@ -107,6 +108,7 @@ export async function updateTransactionAction(input: unknown): Promise<ActionRes
       occurredAt: occurredAtForEdit(detail.transaction.occurredAt, values.date),
       note: values.note?.trim() ? values.note : values.note,
       tags: values.tags,
+      items: values.items,
     });
     revalidateAppData();
     return { ok: true, data: undefined };

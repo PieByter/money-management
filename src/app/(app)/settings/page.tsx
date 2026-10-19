@@ -92,6 +92,20 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
+      <Card id="item" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle>Item &amp; harga</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Katalog barang yang pernah kamu beli beserta riwayat harganya.
+          </p>
+          <Link href="/items" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0')}>
+            Buka item
+          </Link>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Data</CardTitle>

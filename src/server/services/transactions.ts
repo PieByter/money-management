@@ -10,8 +10,15 @@ import {
   type TransactionKind,
 } from '../db/schema';
 import { monthRangeFromKey } from '@/lib/dates';
+import { ServiceError } from './errors';
+import {
+  getTransactionItems,
+  saveItemLines,
+  type ItemLineInput,
+  type TransactionItemLine,
+} from './items';
 
-export class ServiceError extends Error {}
+export { ServiceError };
 
 const SIMPLE_KIND_SET = new Set(['income', 'expense']);
 export type SimpleKind = 'income' | 'expense';
@@ -77,6 +84,8 @@ export interface SimpleTransactionInput {
   tags?: string[];
   clientRequestId?: string | null;
   source?: 'web' | 'telegram' | 'whatsapp' | 'import';
+  /** Rincian item (opsional) — hanya untuk transaksi pengeluaran. */
+  items?: ItemLineInput[];
 }
 
 export async function createTransaction(
@@ -94,22 +103,36 @@ export async function createTransaction(
   if (existing) return existing;
 
   try {
-    const [row] = await db
-      .insert(transactions)
-      .values({
-        userId,
-        walletId: input.walletId,
-        kind: input.kind,
-        amount: input.amount,
-        categoryId: input.categoryId ?? null,
-        occurredAt: input.occurredAt,
-        note: input.note ?? null,
-        tags: input.tags ?? [],
-        source: input.source ?? 'web',
-        clientRequestId: input.clientRequestId ?? null,
-      })
-      .returning();
-    return row;
+    return await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(transactions)
+        .values({
+          userId,
+          walletId: input.walletId,
+          kind: input.kind,
+          amount: input.amount,
+          categoryId: input.categoryId ?? null,
+          occurredAt: input.occurredAt,
+          note: input.note ?? null,
+          tags: input.tags ?? [],
+          source: input.source ?? 'web',
+          clientRequestId: input.clientRequestId ?? null,
+        })
+        .returning();
+      // Rincian item disimpan dalam transaksi DB yang sama agar tidak ada
+      // transaksi "setengah jadi" bila validasinya gagal.
+      if (input.items) {
+        await saveItemLines(
+          tx as AppDb,
+          userId,
+          row.id,
+          row.categoryId,
+          input.amount,
+          input.items,
+        );
+      }
+      return row;
+    });
   } catch (error) {
     if (isUniqueViolation(error)) {
       const row = await findByIdempotencyKey(db, userId, input.clientRequestId);
@@ -216,6 +239,8 @@ export interface UpdateSimpleInput {
   occurredAt?: Date;
   note?: string | null;
   tags?: string[];
+  /** Bila diberikan, rincian item diganti seluruhnya. */
+  items?: ItemLineInput[];
 }
 
 export async function updateTransaction(
@@ -248,21 +273,30 @@ export async function updateTransaction(
   }
   if (input.categoryId) await assertCategory(db, userId, input.categoryId, nextKind);
 
-  const [updated] = await db
-    .update(transactions)
-    .set({
-      ...(input.kind !== undefined ? { kind: input.kind } : {}),
-      ...(input.amount !== undefined ? { amount: input.amount } : {}),
-      ...(input.walletId !== undefined ? { walletId: input.walletId } : {}),
-      ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
-      ...(input.occurredAt !== undefined ? { occurredAt: input.occurredAt } : {}),
-      ...(input.note !== undefined ? { note: input.note } : {}),
-      ...(input.tags !== undefined ? { tags: input.tags } : {}),
-      updatedAt: new Date(),
-    })
-    .where(and(eq(transactions.userId, userId), eq(transactions.id, row.id)))
-    .returning();
-  return updated;
+  const nextAmount = input.amount ?? Number(row.amount);
+  const nextCategoryId = input.categoryId !== undefined ? input.categoryId : row.categoryId;
+
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(transactions)
+      .set({
+        ...(input.kind !== undefined ? { kind: input.kind } : {}),
+        ...(input.amount !== undefined ? { amount: input.amount } : {}),
+        ...(input.walletId !== undefined ? { walletId: input.walletId } : {}),
+        ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
+        ...(input.occurredAt !== undefined ? { occurredAt: input.occurredAt } : {}),
+        ...(input.note !== undefined ? { note: input.note } : {}),
+        ...(input.tags !== undefined ? { tags: input.tags } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(transactions.userId, userId), eq(transactions.id, row.id)))
+      .returning();
+
+    if (input.items) {
+      await saveItemLines(tx as AppDb, userId, row.id, nextCategoryId, nextAmount, input.items);
+    }
+    return updated;
+  });
 }
 
 export interface UpdateTransferInput {
@@ -477,6 +511,8 @@ export interface TransactionListItem {
   categoryColor: string | null;
   source: string;
   status: string;
+  /** Jumlah baris rincian item (0 = tidak dirinci). */
+  itemCount: number;
 }
 
 function encodeCursor(item: { occurredAt: Date; id: string }): string {
@@ -506,6 +542,10 @@ const listSelection = {
   categoryColor: categories.color,
   source: transactions.source,
   status: transactions.status,
+  itemCount: sql<number>`(
+    select count(*) from transaction_items ti
+    where ti.transaction_id = ${transactions.id}
+  )::int`.as('item_count'),
 };
 
 export async function listTransactions(
@@ -568,6 +608,7 @@ export async function listTransactions(
   const items = (hasMore ? rows.slice(0, limit) : rows).map((row) => ({
     ...row,
     amount: Number(row.amount),
+    itemCount: Number(row.itemCount ?? 0),
   }));
   const last = items[items.length - 1];
   return { items, nextCursor: hasMore && last ? encodeCursor(last) : null };
@@ -607,6 +648,7 @@ export interface TransferDetail {
 export interface TransactionDetail {
   transaction: Transaction;
   transfer: TransferDetail | null;
+  items: TransactionItemLine[];
 }
 
 export async function getTransactionDetail(
@@ -656,7 +698,8 @@ export async function getTransactionDetail(
     }
   }
 
-  return { transaction: row, transfer };
+  const items = await getTransactionItems(db, userId, row.id);
+  return { transaction: row, transfer, items };
 }
 
 export async function getWalletBalance(

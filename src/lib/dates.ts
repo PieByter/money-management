@@ -154,3 +154,44 @@ export function eachDayInRange(start: Date, end: Date): string[] {
   }
   return days;
 }
+
+export interface MonthGrid {
+  /** Bulan yang ditampilkan, mis. '2026-10'. */
+  key: string;
+  /** Sel kalender, `null` = padding sebelum hari pertama. */
+  cells: (string | null)[];
+}
+
+/**
+ * Grid kalender satu bulan (Senin sebagai hari pertama, seperti kalender Indonesia).
+ * Dipakai date picker agar tidak perlu mengetik tanggal.
+ */
+export function monthGrid(key: string): MonthGrid {
+  const { year, month } = parseMonthKey(key);
+  const dayCount = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  // getUTCDay(): 0 = Minggu → geser agar Senin = 0.
+  const offset = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
+  const cells: (string | null)[] = Array.from({ length: offset }, () => null);
+  for (let day = 1; day <= dayCount; day += 1) {
+    cells.push(`${key}-${String(day).padStart(2, '0')}`);
+  }
+  return { key, cells };
+}
+
+/** Geser 'YYYY-MM-DD' sebanyak n hari (kalender, bukan instant). */
+export function shiftYmd(ymd: string, deltaDays: number): string {
+  const date = ymdToUtcDate(ymd);
+  return utcDayToYmd(new Date(date.getTime() + deltaDays * 86_400_000));
+}
+
+/** Nomor hari (1-31) dari 'YYYY-MM-DD'. */
+export function dayOfMonth(ymd: string): number {
+  return Number(ymd.slice(8, 10));
+}
+
+/** 'YYYY-MM' dari 'YYYY-MM-DD'. */
+export function ymKeyOfDay(ymd: string): string {
+  return ymd.slice(0, 7);
+}
+
+export const WEEKDAY_LABELS = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'] as const;

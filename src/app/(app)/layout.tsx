@@ -3,6 +3,7 @@ import { getDb } from '@/server/db/client';
 import { listCategories } from '@/server/services/categories';
 import { ensureDefaults } from '@/server/services/defaults';
 import { getFrequentCategories, getLastUsedWalletId } from '@/server/services/reports';
+import { getFrequentItems } from '@/server/services/items';
 import { listWallets } from '@/server/services/wallets';
 import { AppShell } from '@/components/app/app-shell';
 import { TransactionSheetProvider } from '@/components/app/transaction-sheet-provider';
@@ -28,13 +29,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const db = await getDb();
   await ensureDefaults(db, user.id);
 
-  const [wallets, categories, frequentExpense, frequentIncome, lastUsedWalletId] =
+  const [wallets, categories, frequentExpense, frequentIncome, lastUsedWalletId, frequentItems] =
     await Promise.all([
       listWallets(db, user.id),
       listCategories(db, user.id),
       getFrequentCategories(db, user.id, 'expense', 6),
       getFrequentCategories(db, user.id, 'income', 4),
       getLastUsedWalletId(db, user.id),
+      getFrequentItems(db, user.id, 10),
     ]);
 
   const toOption = (category: (typeof categories)[number]): CategoryOption => ({
@@ -61,6 +63,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       frequentIncome.map((c) => c.id),
     ),
     lastUsedWalletId,
+    frequentItems: frequentItems.map((item) => ({
+      id: item.id,
+      name: item.name,
+      lastPrice: item.lastPrice,
+    })),
   };
 
   return (

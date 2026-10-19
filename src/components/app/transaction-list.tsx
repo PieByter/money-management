@@ -35,6 +35,7 @@ function subtitleFor(item: DisplayTransaction): string {
   if (item.kind !== 'transfer') parts.push(item.walletName);
   parts.push(timeLabel(item.occurredAt));
   if (item.note) parts.push(item.note);
+  if (item.itemCount > 0) parts.push(`🧾 ${item.itemCount} item`);
   return parts.join(' · ');
 }
 

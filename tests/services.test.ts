@@ -32,6 +32,14 @@ import {
   getMonthlyTrend,
   getTagTotals,
 } from '@/server/services/reports';
+import {
+  getFrequentItems,
+  getItemPriceHistory,
+  getItemsByTransactions,
+  getTransactionItems,
+  listItems,
+  setTransactionItems,
+} from '@/server/services/items';
 import { monthRangeFromKey } from '@/lib/dates';
 
 let db: AppDb;
@@ -878,5 +886,143 @@ describe('hapus akun', () => {
     // Data user lain tidak tersentuh.
     expect((await listWallets(db, otherUserId, { includeArchived: true })).length).toBeGreaterThan(0);
     expect((await listTransactions(db, otherUserId, {})).items).toHaveLength(1);
+  });
+});
+
+describe('katalog item & rincian belanja', () => {
+  it('menyimpan rincian item, meng-upsert katalog, dan menghitung harga satuan', async () => {
+    const userId = await newUser();
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+    const { listCategories } = await import('@/server/services/categories');
+    const categories = await listCategories(db, userId);
+    const belanja = categories.find((category) => category.name === 'Belanja')!;
+
+    const created = await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 100_000,
+      walletId: wallet.id,
+      categoryId: belanja.id,
+      occurredAt: wibAt(2026, 10, 20),
+      items: [
+        { name: 'Beras 5kg', amount: 70_000 },
+        { name: 'Telur', amount: 20_000, qtyMilli: 500 },
+      ],
+    });
+
+    const lines = await getItemsByTransactions(db, userId, [created.id]);
+    expect(lines[created.id]).toHaveLength(2);
+    expect(lines[created.id][0]).toMatchObject({ name: 'Beras 5kg', amount: 70_000 });
+
+    // Katalog terbentuk otomatis + kategori default ikut terisi.
+    const catalog = await listItems(db, userId);
+    expect(catalog.map((item) => item.name).sort()).toEqual(['Beras 5kg', 'Telur']);
+    expect(catalog.find((item) => item.name === 'Telur')).toMatchObject({
+      lastPrice: 40_000,
+      categoryId: belanja.id,
+    });
+
+    // Chip cepat: item yang baru dipakai muncul lebih dulu.
+    expect((await getFrequentItems(db, userId))[0]?.name).toBeDefined();
+  });
+
+  it('mengganti rincian saat edit dan memperbarui harga terakhir di katalog', async () => {
+    const userId = await newUser();
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+    const created = await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 50_000,
+      walletId: wallet.id,
+      occurredAt: wibAt(2026, 10, 21),
+      items: [{ name: 'Kopi', amount: 25_000 }],
+    });
+    const [kopi] = await listItems(db, userId);
+    expect(kopi).toMatchObject({ name: 'Kopi', lastPrice: 25_000 });
+
+    await updateTransaction(db, userId, {
+      transactionId: created.id,
+      amount: 60_000,
+      items: [
+        { itemId: kopi.id, name: 'Kopi', amount: 40_000 },
+        { name: 'Gula', amount: 15_000 },
+      ],
+    });
+
+    const lines = await getTransactionItems(db, userId, created.id);
+    expect(lines).toHaveLength(2);
+    expect((await listItems(db, userId)).find((item) => item.name === 'Kopi')?.lastPrice).toBe(40_000);
+  });
+
+  it('menolak rincian yang melebihi nominal dan rincian pada pemasukan', async () => {
+    const userId = await newUser();
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+    const created = await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 10_000,
+      walletId: wallet.id,
+      occurredAt: wibAt(2026, 10, 22),
+    });
+
+    await expect(
+      setTransactionItems(db, userId, created.id, [{ name: 'Terlalu mahal', amount: 15_000 }]),
+    ).rejects.toThrow(ServiceError);
+    // Gagal = tidak ada baris yang tersimpan (satu transaksi DB).
+    expect(await getTransactionItems(db, userId, created.id)).toHaveLength(0);
+
+    const income = await createTransaction(db, userId, {
+      kind: 'income',
+      amount: 20_000,
+      walletId: wallet.id,
+      occurredAt: wibAt(2026, 10, 22),
+    });
+    await expect(
+      setTransactionItems(db, userId, income.id, [{ name: 'Bonus', amount: 20_000 }]),
+    ).rejects.toThrow(ServiceError);
+  });
+
+  it('riwayat harga item: urut terbaru, harga satuan dari qty', async () => {
+    const userId = await newUser();
+    const otherUserId = await newUser();
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+
+    for (const [day, price] of [
+      [10, 18_000],
+      [20, 21_000],
+    ] as const) {
+      await createTransaction(db, userId, {
+        kind: 'expense',
+        amount: price,
+        walletId: wallet.id,
+        occurredAt: wibAt(2026, 10, day),
+        items: [{ name: 'Minyak goreng', amount: price, qtyMilli: 2000 }],
+      });
+    }
+    const [minyak] = await listItems(db, userId);
+    const history = await getItemPriceHistory(db, userId, minyak.id);
+
+    expect(history).toHaveLength(2);
+    expect(history[0].lineAmount).toBe(21_000);
+    expect(history[0].unitPrice).toBe(10_500);
+    expect(history[0].walletName).toBeDefined();
+    // Riwayat item tidak boleh bocor ke user lain.
+    expect(await getItemPriceHistory(db, otherUserId, minyak.id)).toHaveLength(0);
+  });
+
+  it('menghapus akun juga membersihkan katalog item dan rinciannya', async () => {
+    const userId = await newUser();
+    const { wipeUserData } = await import('@/server/services/account');
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+    const created = await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 30_000,
+      walletId: wallet.id,
+      occurredAt: wibAt(2026, 10, 23),
+      items: [{ name: 'Sabun', amount: 30_000 }],
+    });
+    expect(await listItems(db, userId)).toHaveLength(1);
+
+    await wipeUserData(db, userId);
+
+    expect(await listItems(db, userId)).toHaveLength(0);
+    expect(await getTransactionItems(db, userId, created.id)).toHaveLength(0);
   });
 });
