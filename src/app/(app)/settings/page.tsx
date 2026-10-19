@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { Download, LogOut } from 'lucide-react';
+import { BudgetManager } from '@/components/app/budget-manager';
 import { CategoryManager } from '@/components/app/category-manager';
+import { DeleteAccountCard } from '@/components/app/delete-account-card';
 import { ThemeSelector } from '@/components/app/theme-toggle';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { signOutAction } from '@/server/actions/auth';
 import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
+import { listBudgets } from '@/server/services/budgets';
 import { listCategories } from '@/server/services/categories';
 
 export const metadata = { title: 'Pengaturan' };
@@ -16,8 +19,24 @@ export const metadata = { title: 'Pengaturan' };
 export default async function SettingsPage() {
   const user = await requireUser();
   const db = await getDb();
-  const categories = await listCategories(db, user.id, { includeArchived: true });
+  const [categories, budgets] = await Promise.all([
+    listCategories(db, user.id, { includeArchived: true }),
+    listBudgets(db, user.id),
+  ]);
   const supabaseMode = isSupabaseConfigured();
+  const budgetByCategory = new Map(budgets.map((budget) => [budget.categoryId, budget]));
+  const budgetTargets = categories
+    .filter((category) => category.kind === 'expense' && !category.archivedAt)
+    .map((category) => {
+      const budget = budgetByCategory.get(category.id);
+      return {
+        categoryId: category.id,
+        name: category.name,
+        icon: category.icon,
+        amount: budget?.amount ?? null,
+        enabled: budget?.enabled ?? false,
+      };
+    });
 
   return (
     <div className="space-y-5">
@@ -47,6 +66,15 @@ export default async function SettingsPage() {
               archived: Boolean(category.archivedAt),
             }))}
           />
+        </CardContent>
+      </Card>
+
+      <Card id="budget" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle>Budget bulanan</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BudgetManager budgets={budgetTargets} />
         </CardContent>
       </Card>
 
@@ -100,6 +128,7 @@ export default async function SettingsPage() {
               server ini). Isi env Supabase untuk mengaktifkan login multi-user.
             </p>
           )}
+          <DeleteAccountCard supabaseMode={supabaseMode} />
         </CardContent>
       </Card>
 

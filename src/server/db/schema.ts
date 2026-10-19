@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
   char,
   check,
   index,
@@ -120,6 +121,26 @@ export const transactions = pgTable(
   ],
 );
 
+export const budgets = pgTable(
+  'budgets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    categoryId: uuid('category_id')
+      .notNull()
+      .references(() => categories.id, { onDelete: 'cascade' }),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('budgets_user_category_uq').on(t.userId, t.categoryId),
+    index('budgets_category_idx').on(t.categoryId),
+    check('budgets_amount_check', sql`${t.amount} > 0`),
+  ],
+);
+
 /**
  * Saldo kantong selalu dihitung dari ledger (bukan kolom yang diedit manual).
  * Hanya transaksi confirmed & belum dihapus yang dihitung.
@@ -156,3 +177,4 @@ export const walletBalances = pgView('wallet_balances')
 export type Wallet = typeof wallets.$inferSelect;
 export type Category = typeof categories.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
+export type Budget = typeof budgets.$inferSelect;

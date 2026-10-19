@@ -14,13 +14,21 @@ riwayat dengan filter, rekonsiliasi, laporan, dan ekspor CSV.
   dengan biaya admin opsional dalam satu `group_id`.
 - **Bottom sheet input cepat**: segmented tipe, numpad besar (`rb` = ×1000), chip kantong &
   kategori (paling sering dipakai di depan), tanggal Hari ini/Kemarin, catatan, tag.
-- **Riwayat**: grup per hari + subtotal harian, filter (tipe/kantong/kategori/bulan),
-  pencarian, infinite scroll, swipe untuk ubah/hapus, tap untuk edit.
+- **Riwayat**: grup per hari + subtotal harian, filter (tipe/kantong/kategori/**tag**/bulan),
+  pencarian (catatan, kategori, dan tag), infinite scroll, swipe/tombol untuk ubah & hapus,
+  tap untuk edit.
+- **Hapus dengan undo**: hapus transaksi/transfer satu tap → muncul tombol **Urungkan** di
+  toast (soft delete, jadi bisa dikembalikan). Hapus kantong juga bisa diurungkan.
 - **Dashboard bulan berjalan**: pemilih bulan (swipe), ringkasan masuk/keluar/selisih,
-  kartu kantong + total aset, donut kategori, tren harian, transaksi terbaru.
-- **Laporan**: perbandingan bulan ini vs bulan lalu, tren 6 bulan, breakdown kategori.
+  kartu kantong + total aset, **progress budget per kategori**, donut kategori, tren harian,
+  transaksi terbaru.
+- **Budget bulanan per kategori** (opsional, diatur di Pengaturan): isi batas → progress bar di
+  dashboard (sisa/lebih), dan tiap budget bisa **dinyalakan/dimatikan** tanpa kehilangan angkanya.
+- **Laporan**: perbandingan bulan ini vs bulan lalu, tren 6 bulan, breakdown kategori, dan
+  **breakdown per tag** (klik tag → riwayat terfilter).
 - **Rekonsiliasi**: masukkan saldo riil → selisih dicatat sebagai adjustment.
-- **Pengaturan**: tema (terang/gelap/sistem), kelola kategori, arsip kantong, ekspor CSV, akun.
+- **Pengaturan**: tema (terang/gelap/sistem), kelola kategori, budget, arsip kantong, ekspor CSV,
+  keluar, dan **hapus akun beserta seluruh data** (wajib ketik `HAPUS` untuk konfirmasi).
 - **PWA**: installable + offline shell (`public/sw.js`, manifest berbasis `src/app/manifest.ts`).
 - Semua perhitungan tanggal/laporan memakai zona **Asia/Jakarta (WIB)**; uang disimpan sebagai
   integer rupiah (tanpa float).
@@ -60,6 +68,7 @@ Isi `.env` (atau `.env.local`) — contoh di [.env.example](./.env.example):
 DATABASE_URL=postgresql://postgres.<ref>:<password>@<region>.pooler.supabase.com:6543/postgres
 NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...   # atau NEXT_PUBLIC_SUPABASE_ANON_KEY gaya lama
+SUPABASE_SECRET_KEY=sb_secret_...   # opsional, server-only: agar "Hapus akun" ikut menghapus user auth
 ```
 
 - **Kunci**: aplikasi menerima kunci `sb_publishable_…` (gaya baru) maupun `anon` key
@@ -69,7 +78,9 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...   # atau NEXT_PUBLIC_SUP
   Salin persis dari Supabase → **Connect**; nilai yang masih mengandung `<`/`>` (placeholder)
   akan diabaikan dengan peringatan.
 - Gunakan kunci **secret** (`sb_secret_…`)/service role **hanya** di server dan jangan pernah
-  ditulis dengan awalan `NEXT_PUBLIC_`.
+  ditulis dengan awalan `NEXT_PUBLIC_`. `SUPABASE_SECRET_KEY` (atau `SUPABASE_SERVICE_ROLE_KEY`)
+  hanya dipakai fitur **Hapus akun**; tanpa kunci itu, hapus akun tetap menghapus seluruh data
+  keuangan, hanya user auth-nya yang tersisa (bisa dihapus manual dari Supabase → Authentication).
 
 Yang terjadi ketika env terisi:
 
@@ -79,8 +90,8 @@ Yang terjadi ketika env terisi:
   perlu kirim/kirim ulang email) dan **Google OAuth** opsional (`@supabase/ssr`); middleware
   melindungi halaman aplikasi.
 - **RLS** ikut terpasang dari migrasi yang sama: `drizzle/0001_rls.sql` mengaktifkan policy
-  `user_id = auth.uid()` pada ketiga tabel + grant untuk role `authenticated` (blok ini
-  otomatis di-skip di PGlite/lokal).
+  `user_id = auth.uid()` pada tabel inti (`drizzle/0003_budgets.sql` melakukan hal yang sama
+  untuk `budgets`) + grant untuk role `authenticated` (blok ini otomatis di-skip di PGlite/lokal).
 
 Terapkan skema ke Supabase (sekali, dari mesin lokal):
 
@@ -201,6 +212,9 @@ Keputusan penting (sesuai PRD):
 - **Idempotensi** semua mutasi via `client_request_id` + unique `(user_id, client_request_id)`
   — aman dari double-tap/retry jaringan.
 - **Soft delete** (`deleted_at`) di semua query; edit transfer mengubah kedua leg secara atomik.
+  Hapus bisa diurungkan (`restoreTransactions` mengosongkan `deleted_at` untuk baris satu group).
+- **Budget** hanya boleh menempel ke kategori pengeluaran milik user sendiri (dijaga di service
+  layer, bukan hanya di UI); progress dihitung dari ledger bulan berjalan.
 - **Zona waktu**: batas bulan & tren harian dihitung WIB di SQL
   (`occurred_at + 7 jam` → hari WIB), bukan zona server.
 - **RLS** sebagai backstop di Supabase; service layer juga selalu memfilter `user_id`.
@@ -209,7 +223,8 @@ Keputusan penting (sesuai PRD):
 
 1. Buat project Supabase → jalankan `npm run db:migrate` dengan `DATABASE_URL` project tsb.
 2. Import repo ke Vercel, set env: `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
-   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (atau `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (atau `NEXT_PUBLIC_SUPABASE_ANON_KEY`), dan
+   `SUPABASE_SECRET_KEY` bila ingin fitur hapus akun ikut menghapus user auth.
    - **Wajib pakai Transaction pooler** (Supabase → Connect → *Transaction pooler*, port
      **6543**, host `aws-0-<region>.pooler.supabase.com`). Koneksi *direct*
      (`db.<ref>.supabase.co`) hanya IPv6 dan **tidak bisa dijangkau dari Vercel**.

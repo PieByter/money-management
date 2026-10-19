@@ -1,10 +1,10 @@
 import { FilterBar } from '@/components/app/filter-bar';
 import { TransactionList } from '@/components/app/transaction-list';
-import { monthKeySchema, uuidSchema } from '@/lib/schemas';
+import { monthKeySchema, tagSchema, uuidSchema } from '@/lib/schemas';
 import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
 import { listCategories } from '@/server/services/categories';
-import { listTransactions } from '@/server/services/transactions';
+import { listTags, listTransactions } from '@/server/services/transactions';
 import { listWallets } from '@/server/services/wallets';
 
 export const metadata = { title: 'Riwayat' };
@@ -25,6 +25,7 @@ export default async function TransactionsPage({
   const kindParam = single(params.jenis);
   const walletParsed = uuidSchema.safeParse(single(params.kantong));
   const categoryParsed = uuidSchema.safeParse(single(params.kategori));
+  const tagParsed = tagSchema.safeParse(single(params.tag));
   const searchParam = single(params.q)?.trim();
 
   const filter = {
@@ -32,25 +33,28 @@ export default async function TransactionsPage({
     kind: KINDS.includes(kindParam as Kind) ? (kindParam as Kind) : null,
     walletId: walletParsed.success ? walletParsed.data : null,
     categoryId: categoryParsed.success ? categoryParsed.data : null,
+    tag: tagParsed.success ? tagParsed.data : null,
     search: searchParam ? searchParam : null,
   };
 
   const user = await requireUser();
   const db = await getDb();
 
-  const [page, wallets, categories] = await Promise.all([
+  const [page, wallets, categories, tags] = await Promise.all([
     listTransactions(db, user.id, {
       filter: {
         month: filter.month ?? undefined,
         kind: filter.kind ?? undefined,
         walletId: filter.walletId ?? undefined,
         categoryId: filter.categoryId ?? undefined,
+        tag: filter.tag ?? undefined,
         search: filter.search ?? undefined,
       },
       limit: 50,
     }),
     listWallets(db, user.id, { includeArchived: true }),
     listCategories(db, user.id, { includeArchived: false }),
+    listTags(db, user.id),
   ]);
 
   return (
@@ -63,6 +67,7 @@ export default async function TransactionsPage({
           name: category.name,
           kind: category.kind,
         }))}
+        tags={tags}
       />
       <div className="mt-1">
         <TransactionList

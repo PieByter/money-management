@@ -16,6 +16,7 @@ import {
   createTransferAction,
   deleteTransactionAction,
   getTransactionDetailAction,
+  restoreTransactionsAction,
   updateTransactionAction,
   updateTransferAction,
 } from '@/server/actions/transactions';
@@ -68,7 +69,6 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
   const [busy, setBusy] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [editKind, setEditKind] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const router = useRouter();
 
   const isTransferEdit = editKind === 'transfer_in' || editKind === 'transfer_out';
@@ -88,7 +88,6 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
   useEffect(() => {
     if (!open) return;
     setBusy(false);
-    setConfirmDelete(false);
     setRequestId(newRequestId());
     setDateYmd(jakartaYmd(new Date()));
     setNote('');
@@ -263,20 +262,31 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
 
   async function handleDelete() {
     if (!editId) return;
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      setTimeout(() => setConfirmDelete(false), 3000);
-      return;
-    }
     setBusy(true);
     const result = await deleteTransactionAction(editId);
     setBusy(false);
-    if (result.ok) {
-      toast.success('Transaksi dihapus');
-      onOpenChange(false);
-    } else {
+    if (!result.ok) {
       toast.error(result.error);
+      return;
     }
+    const removedIds = result.data.ids;
+    onOpenChange(false);
+    toast.success(isTransferEdit ? 'Transfer dihapus' : 'Transaksi dihapus', {
+      duration: 6000,
+      action: {
+        label: 'Urungkan',
+        onClick: () => {
+          void (async () => {
+            const restored = await restoreTransactionsAction(removedIds);
+            if (!restored.ok) {
+              toast.error(restored.error);
+              return;
+            }
+            toast.success('Transaksi dikembalikan');
+          })();
+        },
+      },
+    });
   }
 
   const wallets = data.wallets;
@@ -349,18 +359,13 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
               {editId ? (
                 <button
                   type="button"
-                  onClick={handleDelete}
+                  onClick={() => void handleDelete()}
                   disabled={busy}
-                  aria-label={confirmDelete ? 'Konfirmasi hapus transaksi' : 'Hapus transaksi'}
-                  className={cn(
-                    'flex h-9 items-center gap-1.5 rounded-xl px-3 text-sm transition-colors',
-                    confirmDelete
-                      ? 'bg-destructive text-destructive-foreground'
-                      : 'text-destructive hover:bg-destructive/10',
-                  )}
+                  aria-label={isTransferEdit ? 'Hapus transfer ini' : 'Hapus transaksi ini'}
+                  className="flex h-9 items-center gap-1.5 rounded-xl bg-destructive/10 px-3 text-sm text-destructive transition-colors hover:bg-destructive hover:text-destructive-foreground"
                 >
                   <Trash2 className="h-4 w-4" />
-                  {confirmDelete ? 'Yakin?' : ''}
+                  Hapus
                 </button>
               ) : null}
             </div>

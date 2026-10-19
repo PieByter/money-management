@@ -1,12 +1,14 @@
+import Link from 'next/link';
 import { CategoryDonut, MonthlyTrend } from '@/components/app/charts';
 import { MonthPicker } from '@/components/app/month-picker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { jakartaYearMonth, monthKey, monthLabel, monthRangeFromKey, parseMonthKey, shiftMonthKey } from '@/lib/dates';
 import { formatIdr, formatIdrSigned } from '@/lib/money';
+import { cn } from '@/lib/utils';
 import { monthKeySchema } from '@/lib/schemas';
 import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
-import { getCategoryTotals, getMonthSummary, getMonthlyTrend } from '@/server/services/reports';
+import { getCategoryTotals, getMonthSummary, getMonthlyTrend, getTagTotals } from '@/server/services/reports';
 
 export const metadata = { title: 'Laporan' };
 
@@ -24,11 +26,12 @@ export default async function ReportsPage({
   const db = await getDb();
   const range = monthRangeFromKey(month);
 
-  const [current, previous, trend, categoryTotals] = await Promise.all([
+  const [current, previous, trend, categoryTotals, tagTotals] = await Promise.all([
     getMonthSummary(db, user.id, month),
     getMonthSummary(db, user.id, prevMonth),
     getMonthlyTrend(db, user.id, { endMonth: month, months: 6 }),
     getCategoryTotals(db, user.id, range),
+    getTagTotals(db, user.id, range),
   ]);
 
   const rows = [
@@ -118,6 +121,27 @@ export default async function ReportsPage({
         </CardContent>
       </Card>
 
+      {tagTotals.expense.length > 0 || tagTotals.income.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Per tag — {monthLabel(parseMonthKey(month))}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <TagBarList
+              items={tagTotals.expense.map((item) => ({ tag: item.tag, total: item.total }))}
+              tone="expense"
+              emptyLabel="Belum ada pengeluaran bertag bulan ini"
+            />
+            {tagTotals.income.length > 0 ? (
+              <TagBarList
+                items={tagTotals.income.map((item) => ({ tag: item.tag, total: item.total }))}
+                tone="income"
+              />
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {categoryTotals.income.length > 0 ? (
         <Card>
           <CardHeader>
@@ -150,5 +174,54 @@ export default async function ReportsPage({
         </Card>
       ) : null}
     </div>
+  );
+}
+
+function TagBarList({
+  items,
+  tone,
+  emptyLabel,
+}: {
+  items: { tag: string; total: number }[];
+  tone: 'income' | 'expense';
+  emptyLabel?: string;
+}) {
+  if (items.length === 0) {
+    return emptyLabel ? <p className="text-xs text-muted-foreground">{emptyLabel}</p> : null;
+  }
+  const max = Math.max(...items.map((item) => item.total), 1);
+  return (
+    <ul className="space-y-2">
+      {items.map((item) => {
+        const width = Math.max(Math.round((item.total / max) * 100), 4);
+        return (
+          <li key={item.tag} className="text-sm">
+            <div className="flex items-center justify-between gap-3">
+              <Link
+                href={`/transactions?tag=${encodeURIComponent(item.tag)}`}
+                className="min-w-0 truncate font-medium text-primary hover:underline"
+              >
+                #{item.tag}
+              </Link>
+              <span
+                className={cn(
+                  'shrink-0 font-medium tabular-nums',
+                  tone === 'income' ? 'text-income' : 'text-expense',
+                )}
+              >
+                {tone === 'income' ? '+' : '−'}
+                {formatIdr(item.total)}
+              </span>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn('h-full rounded-full', tone === 'income' ? 'bg-income' : 'bg-expense')}
+                style={{ width: `${width}%` }}
+              />
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

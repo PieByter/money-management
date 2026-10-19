@@ -16,8 +16,10 @@ import {
   deleteTransaction,
   getTransactionDetail,
   ledgerInvariant,
+  listTags,
   listTransactions,
   reconcileWallet,
+  restoreTransactions,
   ServiceError,
   updateTransaction,
   updateTransfer,
@@ -28,6 +30,7 @@ import {
   getDailyTotals,
   getMonthSummary,
   getMonthlyTrend,
+  getTagTotals,
 } from '@/server/services/reports';
 import { monthRangeFromKey } from '@/lib/dates';
 
@@ -268,6 +271,62 @@ describe('ledger transaksi', () => {
     expect(await balanceOf(userId, cash.id)).toBe(0);
     const { items: remaining } = await listTransactions(db, userId, {});
     expect(remaining).toHaveLength(0);
+  });
+
+  it('undo hapus: transaksi & transfer kembali utuh beserta saldo', async () => {
+    const userId = await newUser();
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+    const created = await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 75_000,
+      walletId: wallet.id,
+      occurredAt: wibAt(2026, 10, 9),
+    });
+
+    const removal = await deleteTransaction(db, userId, created.id);
+    expect(removal.ids).toEqual([created.id]);
+    expect(await balanceOf(userId, wallet.id)).toBe(0);
+
+    expect(await restoreTransactions(db, userId, removal.ids)).toBe(1);
+    expect(await balanceOf(userId, wallet.id)).toBe(-75_000);
+    // Restore dua kali tidak error dan tidak menggandakan.
+    expect(await restoreTransactions(db, userId, removal.ids)).toBe(0);
+
+    // Transfer: satu group kembali bersama-sama.
+    const bank = await createWallet(db, userId, { name: uniqueName('Bank'), type: 'bank' });
+    const { groupId } = await createTransfer(db, userId, {
+      fromWalletId: bank.id,
+      toWalletId: wallet.id,
+      amount: 50_000,
+      feeAmount: 1_000,
+      occurredAt: wibAt(2026, 10, 10),
+    });
+    const { items } = await listTransactions(db, userId, {});
+    const leg = items.find((item) => item.groupId === groupId && item.kind === 'transfer_out')!;
+    const transferRemoval = await deleteTransaction(db, userId, leg.id);
+    expect(transferRemoval.ids).toHaveLength(3);
+    expect(await balanceOf(userId, bank.id)).toBe(0);
+
+    expect(await restoreTransactions(db, userId, transferRemoval.ids)).toBe(3);
+    expect(await balanceOf(userId, bank.id)).toBe(-51_000);
+    expect(await balanceOf(userId, wallet.id)).toBe(-25_000);
+  });
+
+  it('restore hanya menyentuh baris milik user sendiri', async () => {
+    const userId = await newUser();
+    const otherUserId = await newUser();
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+    const created = await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 12_000,
+      walletId: wallet.id,
+      occurredAt: wibAt(2026, 10, 11),
+    });
+    const removal = await deleteTransaction(db, userId, created.id);
+
+    expect(await restoreTransactions(db, otherUserId, removal.ids)).toBe(0);
+    const { items } = await listTransactions(db, userId, {});
+    expect(items).toHaveLength(0);
   });
 
   it('edit transaksi biasa dan validasi kategori/tipe', async () => {
@@ -588,6 +647,53 @@ describe('batas bulan WIB dan laporan', () => {
     const ids = new Set([...first.items, ...second.items].map((item) => item.id));
     expect(ids.size).toBe(6);
   });
+
+  it('tag: filter tepat, pencarian, daftar tag, dan breakdown laporan', async () => {
+    const userId = await newUser();
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+    await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 40_000,
+      walletId: wallet.id,
+      note: 'Belanja sayur',
+      tags: ['belanja-bulanan', 'dapur'],
+      occurredAt: wibAt(2026, 10, 6),
+    });
+    await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 60_000,
+      walletId: wallet.id,
+      note: 'Bensin',
+      tags: ['belanja-bulanan'],
+      occurredAt: wibAt(2026, 10, 7),
+    });
+    await createTransaction(db, userId, {
+      kind: 'income',
+      amount: 300_000,
+      walletId: wallet.id,
+      note: 'Bonus',
+      tags: ['proyek'],
+      occurredAt: wibAt(2026, 10, 8),
+    });
+
+    const tagged = await listTransactions(db, userId, { filter: { tag: 'belanja-bulanan' } });
+    expect(tagged.items).toHaveLength(2);
+
+    // Filter tag harus persis, bukan pencocokan sebagian.
+    const partial = await listTransactions(db, userId, { filter: { tag: 'belanja' } });
+    expect(partial.items).toHaveLength(0);
+
+    const searched = await listTransactions(db, userId, { filter: { search: 'dapur' } });
+    expect(searched.items).toHaveLength(1);
+    expect(searched.items[0].note).toBe('Belanja sayur');
+
+    const tags = await listTags(db, userId);
+    expect(tags[0]).toEqual({ tag: 'belanja-bulanan', usage: 2 });
+
+    const totals = await getTagTotals(db, userId, monthRangeFromKey('2026-10'));
+    expect(totals.expense.find((row) => row.tag === 'belanja-bulanan')?.total).toBe(100_000);
+    expect(totals.income.find((row) => row.tag === 'proyek')?.total).toBe(300_000);
+  });
 });
 
 describe('seed idempotent & kantong rekomendasi', () => {
@@ -653,5 +759,124 @@ describe('kategori', () => {
       deleted: false,
       reason: 'in_use',
     });
+  });
+});
+
+describe('budget kategori', () => {
+  it('menghitung pemakaian bulan berjalan dan menghormati status aktif', async () => {
+    const userId = await newUser();
+    const { listCategories } = await import('@/server/services/categories');
+    const { getBudgetProgress, listBudgets, saveBudget, setBudgetEnabled } = await import(
+      '@/server/services/budgets'
+    );
+
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+    const categories = await listCategories(db, userId);
+    const makan = categories.find((category) => category.name === 'Makan')!;
+
+    await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 150_000,
+      walletId: wallet.id,
+      categoryId: makan.id,
+      occurredAt: wibAt(2026, 10, 4),
+    });
+    // Bulan lain tidak ikut dihitung.
+    await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 90_000,
+      walletId: wallet.id,
+      categoryId: makan.id,
+      occurredAt: wibAt(2026, 11, 4),
+    });
+
+    await saveBudget(db, userId, { categoryId: makan.id, amount: 500_000 });
+    const first = await getBudgetProgress(db, userId, '2026-10');
+    expect(first).toHaveLength(1);
+    expect(first[0]).toMatchObject({
+      limit: 500_000,
+      spent: 150_000,
+      remaining: 350_000,
+      over: false,
+    });
+
+    // Simpan ulang mengubah nominal, bukan menambah baris.
+    await saveBudget(db, userId, { categoryId: makan.id, amount: 100_000 });
+    expect(await listBudgets(db, userId)).toHaveLength(1);
+    const tightened = await getBudgetProgress(db, userId, '2026-10');
+    expect(tightened[0]).toMatchObject({ limit: 100_000, remaining: -50_000, over: true });
+
+    // Dimatikan: hilang dari dashboard, angkanya tetap tersimpan.
+    await setBudgetEnabled(db, userId, makan.id, false);
+    expect(await getBudgetProgress(db, userId, '2026-10')).toHaveLength(0);
+    expect((await listBudgets(db, userId))[0]).toMatchObject({ amount: 100_000, enabled: false });
+
+    // Menyimpan nominal lagi otomatis menyalakan.
+    await saveBudget(db, userId, { categoryId: makan.id, amount: 200_000 });
+    expect((await getBudgetProgress(db, userId, '2026-10'))[0]).toMatchObject({
+      limit: 200_000,
+      spent: 150_000,
+    });
+  });
+
+  it('menolak kategori pemasukan, kategori user lain, dan toggle tanpa budget', async () => {
+    const userId = await newUser();
+    const otherUserId = await newUser();
+    const { listCategories } = await import('@/server/services/categories');
+    const { saveBudget, setBudgetEnabled } = await import('@/server/services/budgets');
+
+    const categories = await listCategories(db, userId);
+    const gaji = categories.find((category) => category.kind === 'income')!;
+    await expect(saveBudget(db, userId, { categoryId: gaji.id, amount: 10_000 })).rejects.toThrow(
+      ServiceError,
+    );
+
+    const otherCategories = await listCategories(db, otherUserId);
+    const otherMakan = otherCategories.find((category) => category.name === 'Makan')!;
+    await expect(
+      saveBudget(db, userId, { categoryId: otherMakan.id, amount: 10_000 }),
+    ).rejects.toThrow(ServiceError);
+    await expect(setBudgetEnabled(db, userId, otherMakan.id, false)).rejects.toThrow(ServiceError);
+  });
+});
+
+describe('hapus akun', () => {
+  it('menghapus seluruh data user tanpa menyentuh data user lain', async () => {
+    const userId = await newUser();
+    const otherUserId = await newUser();
+    const { listCategories } = await import('@/server/services/categories');
+    const { listBudgets, saveBudget } = await import('@/server/services/budgets');
+    const { wipeUserData } = await import('@/server/services/account');
+
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+    const categories = await listCategories(db, userId);
+    const makan = categories.find((category) => category.name === 'Makan')!;
+    await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 30_000,
+      walletId: wallet.id,
+      categoryId: makan.id,
+      occurredAt: wibAt(2026, 10, 12),
+    });
+    await saveBudget(db, userId, { categoryId: makan.id, amount: 200_000 });
+
+    const otherWallet = await createWallet(db, otherUserId, { name: uniqueName('Cash'), type: 'cash' });
+    await createTransaction(db, otherUserId, {
+      kind: 'expense',
+      amount: 9_000,
+      walletId: otherWallet.id,
+      occurredAt: wibAt(2026, 10, 12),
+    });
+
+    await wipeUserData(db, userId);
+
+    expect(await listWallets(db, userId, { includeArchived: true })).toHaveLength(0);
+    expect(await listCategories(db, userId, { includeArchived: true })).toHaveLength(0);
+    expect(await listBudgets(db, userId)).toHaveLength(0);
+    expect((await listTransactions(db, userId, {})).items).toHaveLength(0);
+
+    // Data user lain tidak tersentuh.
+    expect((await listWallets(db, otherUserId, { includeArchived: true })).length).toBeGreaterThan(0);
+    expect((await listTransactions(db, otherUserId, {})).items).toHaveLength(1);
   });
 });

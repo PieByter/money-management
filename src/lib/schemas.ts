@@ -38,9 +38,8 @@ export const categoryKindSchema = z.enum(['income', 'expense']);
 
 const nameSchema = z.string().trim().min(1, 'Nama wajib diisi').max(60, 'Nama terlalu panjang');
 const noteSchema = z.string().trim().max(280, 'Catatan terlalu panjang');
-const tagsSchema = z
-  .array(z.string().trim().min(1).max(24))
-  .max(10, 'Maksimal 10 tag');
+export const tagSchema = z.string().trim().min(1).max(24);
+const tagsSchema = z.array(tagSchema).max(10, 'Maksimal 10 tag');
 
 /** Form tambah/edit transaksi non-transfer. */
 export const simpleTransactionSchema = z.object({
@@ -120,6 +119,16 @@ export const categoryFormSchema = z.object({
   color: z.string().max(20).nullish(),
 });
 
+export const budgetFormSchema = z.object({
+  categoryId: uuidSchema,
+  amount: amountSchema,
+});
+
+export const budgetToggleSchema = z.object({
+  categoryId: uuidSchema,
+  enabled: z.boolean(),
+});
+
 export const reconcileSchema = z.object({
   walletId: uuidSchema,
   actualBalance: z
@@ -135,6 +144,7 @@ export const listTransactionsSchema = z.object({
   walletId: uuidSchema.nullish(),
   categoryId: uuidSchema.nullish(),
   kind: z.enum(['income', 'expense', 'transfer', 'adjustment']).nullish(),
+  tag: tagSchema.nullish(),
   search: z.string().trim().max(120).nullish(),
   cursor: z.string().max(80).nullish(),
   limit: z.number().int().min(1).max(100).optional(),
