@@ -78,7 +78,9 @@ export async function getFrequentItems(
   userId: string,
   limit = 12,
 ): Promise<ItemOption[]> {
-  const since = new Date(Date.now() - 90 * 86_400_000);
+  // Kirim string ISO + cast: Drizzle mematikan serializer tanggal milik postgres.js,
+  // sehingga objek Date mentah gagal di driver ("Received an instance of Date").
+  const since = new Date(Date.now() - 90 * 86_400_000).toISOString();
   const result = await db.execute(sql`
     select i.id, i.name, i.unit, i.last_price, i.category_id
     from items i
@@ -88,7 +90,7 @@ export async function getFrequentItems(
       join transactions t on t.id = ti.transaction_id
       where ti.user_id = ${userId}
         and t.deleted_at is null
-        and t.occurred_at >= ${since}
+        and t.occurred_at >= ${since}::timestamptz
         and ti.item_id is not null
       group by ti.item_id
     ) u on u.item_id = i.id
