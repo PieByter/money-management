@@ -24,7 +24,7 @@ Fase 1 hanya input lewat form web yang cepat dan nyaman di HP. Arsitektur sudah 
 
 - Integrasi Telegram/WhatsApp (fase 2, tapi **desain datanya disiapkan sekarang**).
 - Sinkronisasi otomatis mutasi bank / open banking.
-- Multi-user kolaboratif (household sharing), invoice, pajak, investasi, utang-piutang kompleks.
+- Multi-user kolaboratif (household sharing), invoice, pajak, investasi, utang-piutang kompleks (multi-mata uang, bunga, denda). Fase 1 mendukung **pinjaman sederhana**: pokok, pihak, tujuan, kantong sumber dana & kantong pembayaran, dan angsuran/pelunasan.
 - Multi-currency (IDR saja dulu, tapi kolom `currency` tetap ada).
 - Native mobile app.
 
@@ -44,7 +44,8 @@ Fase 1 hanya input lewat form web yang cepat dan nyaman di HP. Arsitektur sudah 
 | U8 | Saya ingin mencocokkan saldo aplikasi dengan saldo riil (rekonsiliasi) dan menyimpan selisihnya sebagai adjustment. | P1 |
 | U9 | Saya ingin transaksi berulang (langganan, cicilan). | P2 |
 | U10 | Saya ingin budget per kategori per bulan. | P2 |
-| U11 | Saya ingin mencatat lewat chat singkat, mis. `makan siang 25rb gopay`. | Fase 2 |
+| U11 | Saya ingin mencatat pinjaman (hutang/piutang): dari/ke siapa, untuk apa, dana masuk ke kantong mana, dan dibayar dari kantong mana — lalu tahu sisanya tanpa hitung manual. | P1 |
+| U12 | Saya ingin mencatat lewat chat singkat, mis. `makan siang 25rb gopay`. | Fase 2 |
 
 ## 4. Konsep Domain: Flow Kantong
 
@@ -109,6 +110,18 @@ Hasil bulan ini: masuk 5.000.000, keluar 26.000, net +4.974.000, tapi saldo kant
 
 - User memasukkan saldo riil sebuah kantong → sistem menghitung selisih → membuat transaksi `adjustment` otomatis dengan label jelas.
 
+### 5.7 Hutang & Piutang (P1)
+
+Fitur ini menjawab pertanyaan "saya pinjam dari siapa, untuk apa, dan sisa berapa?" tanpa menghitung manual.
+
+- Dua arah: **hutang** (uang yang saya pinjam) dan **piutang** (uang yang saya pinjamkan).
+- Satu catatan pinjaman menyimpan: pihak (mis. "Bank Jago"), tujuan (untuk apa), nominal pokok, **kantong sumber dana** (tempat uang pinjaman masuk/keluar), **kantong pembayaran** (default untuk angsuran), tanggal mulai, dan jatuh tempo opsional.
+- **Alur uang nyata**: menerima pinjaman dicatat sebagai `income` di kantong sumber dana, membayar angsuran sebagai `expense` di kantong pembayaran (kebalikannya untuk piutang). Jadi saldo kantong dan laporan masuk/keluar selalu konsisten.
+- **Angsuran & pelunasan**: setiap pembayaran boleh sebagian atau penuh. Tombol **Lunas** memposting sisa pokok ke saldo kantong dalam satu tap (piutang → uang bertambah, hutang → uang berkurang).
+- **Status diturunkan dari ledger**: lunas = total pembayaran aktif ≥ pokok. Tidak ada kolom status yang bisa melenceng; menghapus transaksi pembayaran di Riwayat otomatis mengoreksi sisa.
+- Halaman detail menampilkan **alur uang** (dana masuk → tiap pembayaran beserta kantong & tanggalnya), mis. `Bank Jago (masuk) → Dana (angsuran 1, 2, lunas)`.
+- Kategori otomatis dibuat sekali per user (`Pinjaman Masuk`, `Bayar Hutang`, `Beri Pinjaman`, `Terima Piutang`) supaya laporan memisahkan arus pinjaman dari belanja harian. Transaksinya juga diberi tag `hutang`/`piutang` agar mudah difilter.
+
 ## 6. UX dan UI
 
 ### Prinsip
@@ -127,6 +140,7 @@ Hasil bulan ini: masuk 5.000.000, keluar 26.000, net +4.974.000, tapi saldo kant
 | Tambah Transaksi | Bottom sheet full-height: segmented tipe, numpad, chip kantong/kategori, tanggal, catatan |
 | Riwayat | Filter chips, search, list grup per hari |
 | Kantong | Daftar + detail kantong (saldo, mutasi, tombol rekonsiliasi) |
+| Hutang & Piutang | Ringkasan sisa, filter (berjalan/lunas/hutang/piutang), daftar pinjaman; detail berisi alur uang + riwayat pembayaran + tombol Bayar/Lunas |
 | Laporan | Perbandingan bulan, kategori, tren |
 | Pengaturan | Kategori, kantong, ekspor CSV, akun |
 

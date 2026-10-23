@@ -30,6 +30,11 @@ riwayat dengan filter, rekonsiliasi, laporan, dan ekspor CSV.
   selisih yang belum dirinci boleh dibiarkan. Item katalog terbentuk otomatis dari nama barang.
 - **Item & harga** (Pengaturan → Item & harga): katalog barang yang pernah dibeli, berapa kali
   dibeli, harga terakhir, plus grafik riwayat harga satuan (terendah/tertinggi/perubahan).
+- **Hutang & piutang**: catat pinjaman lengkap dengan **dari/ke siapa**, **untuk apa**, kantong
+  sumber dana (mis. Bank Jago) dan kantong pembayaran (mis. Dana), jatuh tempo, serta angsuran.
+  Uang pinjaman langsung masuk/keluar kantong saat dicatat, dan tombol **Lunas** memposting sisa
+  ke saldo kantong dalam satu tap. Halaman detail menampilkan **alur uang** (dana masuk → tiap
+  pembayaran) dan sisa selalu dihitung dari ledger.
 - **Laporan**: perbandingan bulan ini vs bulan lalu, tren 6 bulan, breakdown kategori, dan
   **breakdown per tag** (klik tag → riwayat terfilter).
 - **Rekonsiliasi**: masukkan saldo riil → selisih dicatat sebagai adjustment.
@@ -203,14 +208,14 @@ Cara kerja:
 ```
 src/
   app/                # Next.js App Router
-    (app)/            # area terautentikasi: dashboard, transactions, wallets, reports, items, settings
+    (app)/            # area terautentikasi: dashboard, transactions, wallets, debts, reports, items, settings
     (auth)/login      # login Supabase (mode lokal auto-redirect)
     api/export        # ekspor CSV
     manifest.ts, icon.png, apple-icon.png   # PWA
   components/app/     # AppShell (bottom nav/sidebar), sheet transaksi + numpad, daftar transaksi, dll.
   server/
     db/               # schema Drizzle + client (PGlite ⇄ Postgres) + view wallet_balances
-    services/         # transaksi (ledger), wallet, kategori, item, budget, laporan — domain logic murni
+    services/         # transaksi (ledger), wallet, kategori, item, budget, hutang-piutang, laporan
     actions/          # Server Actions (validasi Zod + auth + revalidate)
   lib/                # money (integer), dates (WIB), zod schemas, view types
 drizzle/              # migrasi SQL (dipakai lokal & Supabase; termasuk RLS)
@@ -234,6 +239,12 @@ Keputusan penting (sesuai PRD):
   utuh walau item katalognya dihapus) dan `qty_milli` = jumlah × 1000 agar tetap integer. Total
   rincian divalidasi ≤ nominal transaksi di service layer, dan penyimpanannya satu transaksi DB
   bersama transaksinya. Item katalog (`items`) di-*upsert* otomatis dari nama + harga terakhir.
+- **Hutang & piutang** tidak punya kolom status/saldo sendiri: `debts` menyimpan perjanjian
+  (pokok, pihak, tujuan, kantong sumber dana & kantong pembayaran) dan `debt_payments` menyimpan
+  tiap angsuran yang **selalu** terhubung ke satu baris ledger. Sisa = pokok − pembayaran aktif,
+  jadi menghapus transaksi dari Riwayat otomatis mengoreksi sisanya. Arus kasnya nyata:
+  menerima pinjaman = `income`, membayar = `expense` (dan kebalikannya untuk piutang), memakai
+  kategori otomatis `Pinjaman Masuk` / `Bayar Hutang` / `Beri Pinjaman` / `Terima Piutang`.
 - **Zona waktu**: batas bulan & tren harian dihitung WIB di SQL
   (`occurred_at + 7 jam` → hari WIB), bukan zona server.
 - **RLS** sebagai backstop di Supabase; service layer juga selalu memfilter `user_id`.
