@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, Home, Plus, ReceiptText, Settings, Wallet } from 'lucide-react';
+import { BarChart3, HandCoins, Home, Plus, ReceiptText, Settings, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from './theme-toggle';
 import { useTransactionSheet } from './transaction-sheet-provider';
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/transactions', label: 'Riwayat', icon: ReceiptText },
   { href: '/wallets', label: 'Kantong', icon: Wallet },
+  { href: '/debts', label: 'Hutang', icon: HandCoins },
   { href: '/reports', label: 'Laporan', icon: BarChart3 },
 ] as const;
 

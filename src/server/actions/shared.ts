@@ -9,6 +9,8 @@ export function revalidateAppData(): void {
   revalidatePath('/wallets');
   revalidatePath('/wallets/[id]', 'page');
   revalidatePath('/reports');
+  revalidatePath('/debts');
+  revalidatePath('/debts/[id]', 'page');
 }
 
 /** Layout memuat daftar kantong/kategori untuk sheet; refresh saat daftar berubah. */

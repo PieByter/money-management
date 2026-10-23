@@ -12,6 +12,7 @@ import { WALLET_TYPE_LABELS } from '@/lib/view-types';
 import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
 import { getBudgetProgress } from '@/server/services/budgets';
+import { getDebtSummary } from '@/server/services/debts';
 import {
   getAssetOverview,
   getCategoryTotals,
@@ -35,14 +36,16 @@ export default async function DashboardPage({
   const db = await getDb();
   const range = monthRangeFromKey(month);
 
-  const [summary, assets, categoryTotals, daily, recent, budgetProgress] = await Promise.all([
-    getMonthSummary(db, user.id, month),
-    getAssetOverview(db, user.id),
-    getCategoryTotals(db, user.id, range),
-    getDailyTotals(db, user.id, range),
-    getRecentTransactions(db, user.id, 5),
-    getBudgetProgress(db, user.id, month),
-  ]);
+  const [summary, assets, categoryTotals, daily, recent, budgetProgress, debtSummary] =
+    await Promise.all([
+      getMonthSummary(db, user.id, month),
+      getAssetOverview(db, user.id),
+      getCategoryTotals(db, user.id, range),
+      getDailyTotals(db, user.id, range),
+      getRecentTransactions(db, user.id, 5),
+      getBudgetProgress(db, user.id, month),
+      getDebtSummary(db, user.id),
+    ]);
 
   const dailyData = eachDayInRange(range.start, range.end).map((ymd) => ({
     label: String(Number(ymd.slice(8, 10))),
@@ -116,6 +119,47 @@ export default async function DashboardPage({
                 </p>
               </Link>
             ))}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold">Hutang &amp; piutang</h2>
+          <Link href="/debts" className="text-xs font-medium text-primary hover:underline">
+            Kelola
+          </Link>
+        </div>
+        {debtSummary.openCount + debtSummary.paidCount === 0 ? (
+          <Link
+            href="/debts"
+            className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-border px-4 py-3 text-sm transition-colors hover:bg-muted/50"
+          >
+            <span className="text-muted-foreground">
+              Catat pinjaman supaya tahu pinjam dari siapa, untuk apa, dan sisa pembayarannya.
+            </span>
+            <span className="shrink-0 font-medium text-primary">Mulai</span>
+          </Link>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <Link
+              href="/debts?f=hutang"
+              className="rounded-2xl border border-border bg-card px-3.5 py-3 transition-colors hover:bg-muted/60"
+            >
+              <p className="text-[11px] font-medium text-muted-foreground">Sisa hutang</p>
+              <p className="mt-1 truncate text-sm font-semibold tabular-nums text-expense">
+                {formatIdr(debtSummary.payableOutstanding)}
+              </p>
+            </Link>
+            <Link
+              href="/debts?f=piutang"
+              className="rounded-2xl border border-border bg-card px-3.5 py-3 transition-colors hover:bg-muted/60"
+            >
+              <p className="text-[11px] font-medium text-muted-foreground">Sisa piutang</p>
+              <p className="mt-1 truncate text-sm font-semibold tabular-nums text-income">
+                {formatIdr(debtSummary.receivableOutstanding)}
+              </p>
+            </Link>
           </div>
         )}
       </section>

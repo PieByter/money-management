@@ -335,7 +335,9 @@ export function WalletActionsMenu({ wallet }: { wallet: WalletTarget }) {
       return;
     }
     if (!result.data.deleted) {
-      toast.error('Kantong punya transaksi — gunakan arsipkan agar riwayat tetap utuh.');
+      toast.error(
+        'Kantong masih dipakai transaksi atau catatan pinjaman — gunakan arsipkan agar riwayat tetap utuh.',
+      );
       return;
     }
     toast.success('Kantong dihapus', {

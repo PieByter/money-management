@@ -1,7 +1,14 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 import { RECOMMENDED_WALLETS } from '@/lib/wallet-presets';
 import type { AppDb } from '../db/client';
-import { transactions, wallets, walletBalances, type Wallet, type WalletType } from '../db/schema';
+import {
+  debts,
+  transactions,
+  wallets,
+  walletBalances,
+  type Wallet,
+  type WalletType,
+} from '../db/schema';
 
 export interface WalletWithBalance {
   id: string;
@@ -196,6 +203,20 @@ export async function deleteWallet(
     .from(transactions)
     .where(and(eq(transactions.userId, userId), eq(transactions.walletId, walletId)));
   if (Number(used?.value ?? 0) > 0) {
+    return { deleted: false, reason: 'has_transactions' };
+  }
+  // Kantong yang masih dipakai catatan hutang/piutang tidak boleh dihapus
+  // (FK akan menolak); arahkan user untuk mengarsipkan saja.
+  const [debtRef] = await db
+    .select({ value: sql<number>`count(*)::int` })
+    .from(debts)
+    .where(
+      and(
+        eq(debts.userId, userId),
+        or(eq(debts.fundingWalletId, walletId), eq(debts.paymentWalletId, walletId)),
+      ),
+    );
+  if (Number(debtRef?.value ?? 0) > 0) {
     return { deleted: false, reason: 'has_transactions' };
   }
   await db.delete(wallets).where(and(eq(wallets.userId, userId), eq(wallets.id, walletId)));

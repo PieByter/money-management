@@ -162,6 +162,54 @@ export const reconcileSchema = z.object({
   note: noteSchema.nullish(),
 });
 
+/** Hutang (`payable`) atau piutang (`receivable`). */
+export const debtDirectionSchema = z.enum(['payable', 'receivable']);
+
+const debtPartySchema = z
+  .string()
+  .trim()
+  .min(1, 'Nama pihak wajib diisi')
+  .max(80, 'Nama terlalu panjang');
+const debtPurposeSchema = z.string().trim().max(160, 'Tujuan terlalu panjang');
+
+export const debtFormSchema = z.object({
+  direction: debtDirectionSchema,
+  counterparty: debtPartySchema,
+  purpose: debtPurposeSchema.nullish(),
+  principal: amountSchema,
+  /** Kantong tempat uang pinjaman masuk (hutang) / keluar (piutang). */
+  fundingWalletId: uuidSchema,
+  /** Kantong default untuk angsuran & pelunasan. */
+  paymentWalletId: uuidSchema,
+  date: ymdSchema.nullish(),
+  dueDate: ymdSchema.nullish(),
+  note: noteSchema.nullish(),
+});
+
+export const debtUpdateSchema = z.object({
+  debtId: uuidSchema,
+  counterparty: debtPartySchema.optional(),
+  purpose: debtPurposeSchema.nullish(),
+  paymentWalletId: uuidSchema.optional(),
+  dueDate: ymdSchema.nullish(),
+  note: noteSchema.nullish(),
+});
+
+export const debtPaymentSchema = z.object({
+  debtId: uuidSchema,
+  amount: amountSchema,
+  walletId: uuidSchema,
+  date: ymdSchema.nullish(),
+  note: noteSchema.nullish(),
+});
+
+export const debtSettleSchema = z.object({
+  debtId: uuidSchema,
+  walletId: uuidSchema,
+  date: ymdSchema.nullish(),
+  note: noteSchema.nullish(),
+});
+
 export const listTransactionsSchema = z.object({
   month: monthKeySchema.nullish(),
   walletId: uuidSchema.nullish(),
@@ -179,3 +227,4 @@ export type WalletFormValues = z.infer<typeof walletFormSchema>;
 export type CategoryFormValues = z.infer<typeof categoryFormSchema>;
 export type ReconcileValues = z.infer<typeof reconcileSchema>;
 export type ListTransactionsValues = z.infer<typeof listTransactionsSchema>;
+export type DebtFormValues = z.infer<typeof debtFormSchema>;

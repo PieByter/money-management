@@ -26,10 +26,16 @@ export const TRANSACTION_KINDS = [
 ] as const;
 export const TRANSACTION_SOURCES = ['web', 'telegram', 'whatsapp', 'import'] as const;
 export const TRANSACTION_STATUSES = ['draft', 'confirmed'] as const;
+/**
+ * `payable` = hutang (uang yang saya pinjam), `receivable` = piutang
+ * (uang yang saya pinjamkan).
+ */
+export const DEBT_DIRECTIONS = ['payable', 'receivable'] as const;
 
 export type WalletType = (typeof WALLET_TYPES)[number];
 export type CategoryKind = (typeof CATEGORY_KINDS)[number];
 export type TransactionKind = (typeof TRANSACTION_KINDS)[number];
+export type DebtDirection = (typeof DEBT_DIRECTIONS)[number];
 
 export const wallets = pgTable(
   'wallets',
@@ -197,6 +203,85 @@ export const transactionItems = pgTable(
 );
 
 /**
+ * Hutang & piutang (debt). Satu baris = satu perjanjian pinjaman.
+ *
+ * Alur uangnya selalu dua kantong berbeda, persis seperti kasus nyata
+ * "pinjam dari Bank Jago, lunasi dari Dana":
+ *   * `fundingWalletId` — kantong tempat uang pinjaman masuk (hutang) atau
+ *     keluar (piutang). Dicatat sebagai transaksi `income`/`expense` dan
+ *     id-nya disimpan di `fundingTransactionId`.
+ *   * `paymentWalletId` — kantong default untuk angsuran/pelunasan.
+ *
+ * Status lunas **tidak** disimpan sebagai kolom: selalu dihitung dari
+ * `debt_payments` supaya tidak bisa melenceng dari ledger.
+ */
+export const debts = pgTable(
+  'debts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    direction: text('direction', { enum: DEBT_DIRECTIONS }).notNull(),
+    counterparty: text('counterparty').notNull(),
+    purpose: text('purpose'),
+    principal: bigint('principal', { mode: 'number' }).notNull(),
+    fundingWalletId: uuid('funding_wallet_id')
+      .notNull()
+      .references(() => wallets.id),
+    paymentWalletId: uuid('payment_wallet_id')
+      .notNull()
+      .references(() => wallets.id),
+    fundingTransactionId: uuid('funding_transaction_id').references(() => transactions.id, {
+      onDelete: 'set null',
+    }),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    dueAt: timestamp('due_at', { withTimezone: true }),
+    note: text('note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('debts_user_idx').on(t.userId),
+    index('debts_user_direction_idx').on(t.userId, t.direction),
+    index('debts_funding_wallet_idx').on(t.fundingWalletId),
+    index('debts_payment_wallet_idx').on(t.paymentWalletId),
+    index('debts_funding_transaction_idx').on(t.fundingTransactionId),
+    check('debts_direction_check', sql`${t.direction} in ('payable','receivable')`),
+    check('debts_principal_check', sql`${t.principal} > 0`),
+  ],
+);
+
+/**
+ * Satu pembayaran/angsuran sebuah debt. Selalu terhubung 1:1 dengan transaksi
+ * ledger (`transaction_id`), jadi pembayaran yang transaksinya dihapus dari
+ * Riwayat otomatis tidak dihitung lagi sebagai pelunasan.
+ */
+export const debtPayments = pgTable(
+  'debt_payments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    debtId: uuid('debt_id')
+      .notNull()
+      .references(() => debts.id, { onDelete: 'cascade' }),
+    walletId: uuid('wallet_id')
+      .notNull()
+      .references(() => wallets.id),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    note: text('note'),
+    transactionId: uuid('transaction_id').references(() => transactions.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('debt_payments_debt_idx').on(t.debtId),
+    index('debt_payments_user_idx').on(t.userId),
+    index('debt_payments_wallet_idx').on(t.walletId),
+    index('debt_payments_transaction_idx').on(t.transactionId),
+    check('debt_payments_amount_check', sql`${t.amount} > 0`),
+  ],
+);
+
+/**
  * Saldo kantong selalu dihitung dari ledger (bukan kolom yang diedit manual).
  * Hanya transaksi confirmed & belum dihapus yang dihitung.
  */
@@ -235,3 +320,5 @@ export type Transaction = typeof transactions.$inferSelect;
 export type Budget = typeof budgets.$inferSelect;
 export type Item = typeof items.$inferSelect;
 export type TransactionItem = typeof transactionItems.$inferSelect;
+export type Debt = typeof debts.$inferSelect;
+export type DebtPayment = typeof debtPayments.$inferSelect;
