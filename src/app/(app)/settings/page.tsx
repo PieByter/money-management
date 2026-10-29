@@ -106,6 +106,21 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
+      <Card id="template" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle>Template transaksi</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Transaksi yang sering diulang (mis. susu + roti Rp 15.000 tiap Senin) cukup disimpan
+            sekali, lalu dicatat dengan satu tap atau otomatis sesuai jadwal.
+          </p>
+          <Link href="/templates" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0')}>
+            Buka
+          </Link>
+        </CardContent>
+      </Card>
+
       <Card id="pinjaman" className="scroll-mt-20">
         <CardHeader>
           <CardTitle>Hutang &amp; piutang</CardTitle>

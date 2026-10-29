@@ -4,6 +4,7 @@ import { listCategories } from '@/server/services/categories';
 import { ensureDefaults } from '@/server/services/defaults';
 import { getFrequentCategories, getLastUsedWalletId } from '@/server/services/reports';
 import { getFrequentItems } from '@/server/services/items';
+import { listTemplates, runDueTemplates } from '@/server/services/templates';
 import { listWallets } from '@/server/services/wallets';
 import { AppShell } from '@/components/app/app-shell';
 import { TransactionSheetProvider } from '@/components/app/transaction-sheet-provider';
@@ -29,15 +30,31 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const db = await getDb();
   await ensureDefaults(db, user.id);
 
-  const [wallets, categories, frequentExpense, frequentIncome, lastUsedWalletId, frequentItems] =
-    await Promise.all([
-      listWallets(db, user.id),
-      listCategories(db, user.id),
-      getFrequentCategories(db, user.id, 'expense', 6),
-      getFrequentCategories(db, user.id, 'income', 4),
-      getLastUsedWalletId(db, user.id),
-      getFrequentItems(db, user.id, 10),
-    ]);
+  // Template terjadwal diposting saat aplikasi dibuka (tanpa cron). Kegagalan
+  // di sini tidak boleh menghalangi halaman dirender.
+  try {
+    await runDueTemplates(db, user.id);
+  } catch (error) {
+    console.error('[templates] gagal memproses jadwal', error);
+  }
+
+  const [
+    wallets,
+    categories,
+    frequentExpense,
+    frequentIncome,
+    lastUsedWalletId,
+    frequentItems,
+    templates,
+  ] = await Promise.all([
+    listWallets(db, user.id),
+    listCategories(db, user.id),
+    getFrequentCategories(db, user.id, 'expense', 6),
+    getFrequentCategories(db, user.id, 'income', 4),
+    getLastUsedWalletId(db, user.id),
+    getFrequentItems(db, user.id, 10),
+    listTemplates(db, user.id),
+  ]);
 
   const toOption = (category: (typeof categories)[number]): CategoryOption => ({
     id: category.id,
@@ -68,6 +85,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       name: item.name,
       lastPrice: item.lastPrice,
     })),
+    templates,
   };
 
   return (

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, HandCoins, Home, Plus, ReceiptText, Settings, Wallet } from 'lucide-react';
+import { BarChart3, HandCoins, Home, LayoutTemplate, Plus, ReceiptText, Settings, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from './theme-toggle';
 import { useTransactionSheet } from './transaction-sheet-provider';
@@ -10,6 +10,7 @@ import { useTransactionSheet } from './transaction-sheet-provider';
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Home', icon: Home },
   { href: '/transactions', label: 'Riwayat', icon: ReceiptText },
+  { href: '/templates', label: 'Template', icon: LayoutTemplate },
   { href: '/wallets', label: 'Kantong', icon: Wallet },
   { href: '/debts', label: 'Hutang', icon: HandCoins },
   { href: '/reports', label: 'Laporan', icon: BarChart3 },
@@ -92,6 +93,13 @@ export function AppShell({
           </Link>
           <div className="flex items-center gap-0.5">
             <ThemeToggle />
+            <Link
+              href="/templates"
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label="Template"
+            >
+              <LayoutTemplate className="h-5 w-5" />
+            </Link>
             <Link
               href="/settings"
               className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

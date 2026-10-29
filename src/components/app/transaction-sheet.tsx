@@ -10,7 +10,13 @@ import { Input } from '@/components/ui/input';
 import { jakartaYmd } from '@/lib/dates';
 import { formatAmount, formatIdr } from '@/lib/money';
 import { cn } from '@/lib/utils';
-import type { CategoryOption, SheetData, SheetMode, WalletOption } from '@/lib/view-types';
+import type {
+  CategoryOption,
+  SheetData,
+  SheetMode,
+  TemplateSummary,
+  WalletOption,
+} from '@/lib/view-types';
 import {
   createTransactionAction,
   createTransferAction,
@@ -150,6 +156,19 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
 
   const pressKey = useCallback((key: NumpadKey) => {
     setDigits((prev) => appendKey(prev, key));
+  }, []);
+
+  /** Sekali tap: seluruh form terisi dari template (nominal, kategori, rincian). */
+  const pickTemplate = useCallback((template: TemplateSummary) => {
+    setMode(template.kind);
+    setDigits(String(template.amount));
+    setFromWalletId(template.walletId);
+    setToWalletId(null);
+    setCategoryId(template.categoryId);
+    setNote(template.note ?? '');
+    setTagsRaw(template.tags.join(', '));
+    setItemLines(template.items.map((line) => makeItemLine(line)));
+    toast.success(`Template “${template.name}” dipakai`);
   }, []);
 
   const submit = useCallback(async () => {
@@ -426,6 +445,39 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
                   {loadingEdit ? ' · memuat…' : ''}
                 </p>
               </div>
+
+              {!editId && data.templates.length > 0 ? (
+                <div className="mb-2">
+                  <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">Template</p>
+                    <button
+                      type="button"
+                      onClick={() => goTo('/templates')}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Kelola template
+                    </button>
+                  </div>
+                  <div className="no-scrollbar flex flex-nowrap gap-2 overflow-x-auto pb-0.5 lg:flex-wrap lg:overflow-visible">
+                    {data.templates.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => pickTemplate(template)}
+                        className="flex shrink-0 flex-col items-start rounded-xl border border-border bg-card px-2.5 py-1.5 text-left transition-colors hover:bg-muted"
+                      >
+                        <span className="flex items-center gap-1 text-xs font-medium">
+                          <span aria-hidden>{template.kind === 'income' ? '⬇️' : '⬆️'}</span>
+                          {template.name}
+                        </span>
+                        <span className="text-[11px] tabular-nums text-muted-foreground">
+                          {formatIdr(template.amount)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <section className="mt-1 space-y-3 sm:grid sm:grid-cols-2 sm:gap-x-4 sm:gap-y-3 sm:space-y-0">
                 {mode === 'transfer' ? (
