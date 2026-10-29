@@ -1,5 +1,7 @@
 /** Tipe ringan yang aman dipakai di client component (tanpa import server). */
 
+import type { TemplateFrequency } from './template-schedule';
+
 export type SheetMode = 'expense' | 'income' | 'transfer';
 
 export interface WalletOption {
@@ -23,6 +25,38 @@ export interface ItemChip {
   lastPrice: number | null;
 }
 
+/** Rincian item yang disimpan di dalam template (snapshot ringan). */
+export interface TemplateItemLine {
+  itemId: string | null;
+  name: string;
+  amount: number;
+  qtyMilli: number;
+}
+
+/** Template transaksi siap pakai (tanggal dikirim sebagai ISO string). */
+export interface TemplateSummary {
+  id: string;
+  name: string;
+  kind: 'income' | 'expense';
+  amount: number;
+  walletId: string;
+  categoryId: string | null;
+  note: string | null;
+  tags: string[];
+  items: TemplateItemLine[];
+  frequency: TemplateFrequency;
+  weekday: number | null;
+  dayOfMonth: number | null;
+  nextRunAt: string | null;
+  /** Tanggal (kalender Jakarta) kemunculan berikutnya — siap ditampilkan. */
+  nextRunYmd: string | null;
+  lastRunAt: string | null;
+  walletName: string | null;
+  walletIcon: string | null;
+  categoryName: string | null;
+  categoryIcon: string | null;
+}
+
 export interface SheetData {
   wallets: WalletOption[];
   expenseCategories: CategoryOption[];
@@ -30,6 +64,8 @@ export interface SheetData {
   lastUsedWalletId: string | null;
   /** Item yang sering dibeli — chip cepat untuk mode belanja itemized. */
   frequentItems: ItemChip[];
+  /** Template yang bisa sekali tap mengisi seluruh form transaksi. */
+  templates: TemplateSummary[];
 }
 
 export const WALLET_TYPE_LABELS: Record<string, string> = {

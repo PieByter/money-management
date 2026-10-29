@@ -62,6 +62,12 @@ export function jakartaDateAtNoonUtc(ymd: string): Date {
   return new Date(Date.UTC(y, m - 1, d, 12, 0, 0) - WIB_OFFSET_MS);
 }
 
+/** 'YYYY-MM-DD' (kalender Jakarta) → instant pukul 00:00 WIB hari itu. */
+export function jakartaStartOfDayUtc(ymd: string): Date {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d) - WIB_OFFSET_MS);
+}
+
 /**
  * Instant untuk tanggal yang dipilih user di form.
  * Hari ini (WIB) → waktu sekarang agar urutan jam akurat;

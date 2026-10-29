@@ -122,6 +122,47 @@ export const updateTransferSchema = z
     { message: 'Kantong asal dan tujuan tidak boleh sama', path: ['toWalletId'] },
   );
 
+export const templateFrequencySchema = z.enum(['none', 'daily', 'weekly', 'monthly']);
+
+/** Template transaksi: resep yang bisa dipakai ulang (mis. susu + roti tiap Senin). */
+export const templateFormSchema = z
+  .object({
+    id: uuidSchema.optional(),
+    name: nameSchema,
+    kind: z.enum(['income', 'expense']),
+    amount: amountSchema,
+    walletId: uuidSchema,
+    categoryId: uuidSchema.nullish(),
+    note: noteSchema.nullish(),
+    tags: tagsSchema.optional(),
+    items: transactionItemsSchema.optional(),
+    frequency: templateFrequencySchema.default('none'),
+    weekday: z
+      .number()
+      .int()
+      .min(1, 'Hari tidak valid')
+      .max(7, 'Hari tidak valid')
+      .nullish(),
+    dayOfMonth: z
+      .number()
+      .int()
+      .min(1, 'Tanggal tidak valid')
+      .max(31, 'Tanggal tidak valid')
+      .nullish(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.frequency === 'weekly' && !value.weekday) {
+      ctx.addIssue({ code: 'custom', path: ['weekday'], message: 'Pilih hari untuk jadwal mingguan' });
+    }
+    if (value.frequency === 'monthly' && !value.dayOfMonth) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['dayOfMonth'],
+        message: 'Isi tanggal untuk jadwal bulanan',
+      });
+    }
+  });
+
 export const walletFormSchema = z.object({
   name: nameSchema,
   type: walletTypeSchema,
@@ -228,3 +269,4 @@ export type CategoryFormValues = z.infer<typeof categoryFormSchema>;
 export type ReconcileValues = z.infer<typeof reconcileSchema>;
 export type ListTransactionsValues = z.infer<typeof listTransactionsSchema>;
 export type DebtFormValues = z.infer<typeof debtFormSchema>;
+export type TemplateFormValues = z.infer<typeof templateFormSchema>;

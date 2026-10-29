@@ -8,6 +8,7 @@ import {
   walletBalances,
   type Transaction,
   type TransactionKind,
+  type TransactionSource,
 } from '../db/schema';
 import { monthRangeFromKey } from '@/lib/dates';
 import { ServiceError } from './errors';
@@ -49,7 +50,7 @@ async function findByIdempotencyKey(
   return row ?? null;
 }
 
-async function assertWallet(db: AppDb, userId: string, walletId: string): Promise<void> {
+export async function assertWallet(db: AppDb, userId: string, walletId: string): Promise<void> {
   const [row] = await db
     .select({ id: wallets.id, archivedAt: wallets.archivedAt })
     .from(wallets)
@@ -59,7 +60,7 @@ async function assertWallet(db: AppDb, userId: string, walletId: string): Promis
   if (row.archivedAt) throw new ServiceError('Kantong sudah diarsipkan');
 }
 
-async function assertCategory(
+export async function assertCategory(
   db: AppDb,
   userId: string,
   categoryId: string,
@@ -83,7 +84,7 @@ export interface SimpleTransactionInput {
   note?: string | null;
   tags?: string[];
   clientRequestId?: string | null;
-  source?: 'web' | 'telegram' | 'whatsapp' | 'import';
+  source?: TransactionSource;
   /** Rincian item (opsional) — hanya untuk transaksi pengeluaran. */
   items?: ItemLineInput[];
 }
@@ -151,7 +152,7 @@ export interface TransferInput {
   occurredAt: Date;
   note?: string | null;
   clientRequestId?: string | null;
-  source?: 'web' | 'telegram' | 'whatsapp' | 'import';
+  source?: TransactionSource;
 }
 
 /**

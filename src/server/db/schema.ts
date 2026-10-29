@@ -5,14 +5,18 @@ import {
   char,
   check,
   index,
+  jsonb,
   pgTable,
   pgView,
+  smallint,
   text,
   timestamp,
   unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { TEMPLATE_FREQUENCIES } from '@/lib/template-schedule';
+import type { TemplateItemLine } from '@/lib/view-types';
 
 export const WALLET_TYPES = ['cash', 'bank', 'ewallet', 'other'] as const;
 export const CATEGORY_KINDS = ['income', 'expense'] as const;
@@ -24,7 +28,7 @@ export const TRANSACTION_KINDS = [
   'adjustment_in',
   'adjustment_out',
 ] as const;
-export const TRANSACTION_SOURCES = ['web', 'telegram', 'whatsapp', 'import'] as const;
+export const TRANSACTION_SOURCES = ['web', 'telegram', 'whatsapp', 'import', 'template'] as const;
 export const TRANSACTION_STATUSES = ['draft', 'confirmed'] as const;
 /**
  * `payable` = hutang (uang yang saya pinjam), `receivable` = piutang
@@ -35,6 +39,7 @@ export const DEBT_DIRECTIONS = ['payable', 'receivable'] as const;
 export type WalletType = (typeof WALLET_TYPES)[number];
 export type CategoryKind = (typeof CATEGORY_KINDS)[number];
 export type TransactionKind = (typeof TRANSACTION_KINDS)[number];
+export type TransactionSource = (typeof TRANSACTION_SOURCES)[number];
 export type DebtDirection = (typeof DEBT_DIRECTIONS)[number];
 
 export const wallets = pgTable(
@@ -203,6 +208,73 @@ export const transactionItems = pgTable(
 );
 
 /**
+ * Template transaksi: "resep" transaksi yang sering diulang, mis. susu + roti
+ * Rp 15.000 tiap Senin. Dua cara pakai:
+ *   * manual — sekali tap langsung mengisi form / mencatat transaksi;
+ *   * otomatis — `frequency` ≠ 'none' membuat `next_run_at` diproses saat
+ *     aplikasi dibuka, lalu transaksi dibuat dengan tanggal jadwalnya.
+ *
+ * `items` disimpan sebagai jsonb (snapshot) karena rincian template bukan
+ * bagian dari ledger; saat dipakai barulah baris `transaction_items` dibuat.
+ */
+export const transactionTemplates = pgTable(
+  'transaction_templates',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    name: text('name').notNull(),
+    kind: text('kind', { enum: CATEGORY_KINDS }).notNull(),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
+    walletId: uuid('wallet_id')
+      .notNull()
+      .references(() => wallets.id),
+    categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
+    note: text('note'),
+    tags: text('tags')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    items: jsonb('items')
+      .$type<TemplateItemLine[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    frequency: text('frequency', { enum: TEMPLATE_FREQUENCIES }).notNull().default('none'),
+    /** Senin = 1 … Minggu = 7; hanya dipakai untuk `frequency` = 'weekly'. */
+    weekday: smallint('weekday'),
+    /** 1-31; hanya dipakai untuk `frequency` = 'monthly'. */
+    dayOfMonth: smallint('day_of_month'),
+    nextRunAt: timestamp('next_run_at', { withTimezone: true }),
+    lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('transaction_templates_user_name_uq').on(t.userId, sql`lower(${t.name})`),
+    index('transaction_templates_user_idx').on(t.userId),
+    index('transaction_templates_due_idx')
+      .on(t.nextRunAt)
+      .where(sql`${t.nextRunAt} is not null`),
+    check(
+      'transaction_templates_kind_check',
+      sql`${t.kind} in ('income','expense')`,
+    ),
+    check('transaction_templates_amount_check', sql`${t.amount} > 0`),
+    check(
+      'transaction_templates_frequency_check',
+      sql`${t.frequency} in ('none','daily','weekly','monthly')`,
+    ),
+    check(
+      'transaction_templates_weekday_check',
+      sql`${t.weekday} is null or (${t.weekday} between 1 and 7)`,
+    ),
+    check(
+      'transaction_templates_day_check',
+      sql`${t.dayOfMonth} is null or (${t.dayOfMonth} between 1 and 31)`,
+    ),
+  ],
+);
+
+/**
  * Hutang & piutang (debt). Satu baris = satu perjanjian pinjaman.
  *
  * Alur uangnya selalu dua kantong berbeda, persis seperti kasus nyata
@@ -320,5 +392,6 @@ export type Transaction = typeof transactions.$inferSelect;
 export type Budget = typeof budgets.$inferSelect;
 export type Item = typeof items.$inferSelect;
 export type TransactionItem = typeof transactionItems.$inferSelect;
+export type TransactionTemplate = typeof transactionTemplates.$inferSelect;
 export type Debt = typeof debts.$inferSelect;
 export type DebtPayment = typeof debtPayments.$inferSelect;
