@@ -35,6 +35,11 @@ riwayat dengan filter, rekonsiliasi, laporan, dan ekspor CSV.
   Uang pinjaman langsung masuk/keluar kantong saat dicatat, dan tombol **Lunas** memposting sisa
   ke saldo kantong dalam satu tap. Halaman detail menampilkan **alur uang** (dana masuk → tiap
   pembayaran) dan sisa selalu dihitung dari ledger.
+- **Template transaksi**: simpan "resep" transaksi yang sering diulang (mis. **susu + roti
+  Rp 15.000 tiap Senin**) lengkap dengan kantong, kategori, catatan, tag, dan rincian item.
+  Template muncul sebagai chip di form input (sekali tap = form terisi) dan bisa diberi
+  **jadwal otomatis** (harian/mingguan/bulanan) — transaksi yang jatuh tempo langsung dicatat
+  saat aplikasi dibuka, dengan tanggal sesuai jadwal walau kamu telat membuka aplikasi.
 - **Laporan**: perbandingan bulan ini vs bulan lalu, tren 6 bulan, breakdown kategori, dan
   **breakdown per tag** (klik tag → riwayat terfilter).
 - **Rekonsiliasi**: masukkan saldo riil → selisih dicatat sebagai adjustment.
@@ -245,6 +250,12 @@ Keputusan penting (sesuai PRD):
   jadi menghapus transaksi dari Riwayat otomatis mengoreksi sisanya. Arus kasnya nyata:
   menerima pinjaman = `income`, membayar = `expense` (dan kebalikannya untuk piutang), memakai
   kategori otomatis `Pinjaman Masuk` / `Bayar Hutang` / `Beri Pinjaman` / `Terima Piutang`.
+- **Template transaksi** (`transaction_templates`) menyimpan tipe, nominal, kantong, kategori,
+  tag, dan `items` (jsonb) sebagai resep — bukan ledger, jadi rinciannya baru menjadi baris
+  `transaction_items` saat template dipakai. `frequency` + `next_run_at` membuat posting
+  otomatis tanpa cron: layout aplikasi memproses template yang jatuh tempo, mengklaim tiap
+  kemunculan dengan update bersyarat (anti-dobel), dan melewati kemunculan lebih tua dari 31
+  hari agar ledger tidak dibanjiri data lama. Transaksinya ditandai `source = 'template'`.
 - **Zona waktu**: batas bulan & tren harian dihitung WIB di SQL
   (`occurred_at + 7 jam` → hari WIB), bukan zona server.
 - **RLS** sebagai backstop di Supabase; service layer juga selalu memfilter `user_id`.
