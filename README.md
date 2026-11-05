@@ -15,6 +15,11 @@ riwayat dengan filter, rekonsiliasi, laporan, dan ekspor CSV.
 - **Bottom sheet input cepat**: segmented tipe, numpad besar (`rb` = ×1000), chip kantong &
   kategori (paling sering dipakai di depan), **date picker kalender** (hari ini/kemarin atau
   ketuk tanggal di kalender — tanpa mengetik), catatan, tag.
+- **Scan struk AI (opsional, gratis)**: foto struk → AI membaca merchant, tanggal, total,
+  rincian item, dan kategori → form pengeluaran langsung terisi sebagai **draft**. Pengguna
+  tetap memeriksa dan menekan Simpan; tidak ada transaksi yang masuk otomatis tanpa konfirmasi.
+  Bisa memakai Gemini free tier, OpenRouter model `:free`, atau Ollama lokal. Foto tidak
+  disimpan di database — hanya ringkasan hasil ekstraksi di `raw_input`.
 - **Riwayat**: grup per hari + subtotal harian, filter (tipe/kantong/kategori/**tag**/bulan),
   pencarian (catatan, kategori, dan tag), infinite scroll, swipe/tombol untuk ubah & hapus,
   tap untuk edit.
@@ -84,6 +89,48 @@ Izinkan node.exe saat Windows Firewall bertanya.
 > Kalau aplikasi terasa memakai versi lama: DevTools → Application → Service Workers →
 > *Unregister*, lalu hard reload. Bump `CACHE` di [`public/sw.js`](./public/sw.js) saat aturan
 > cache diubah.
+
+## Scan struk AI (opsional, gratis)
+
+Fitur ini tidak wajib diisi env apa pun. Tanpa kunci, tombol **Scan struk** tetap muncul
+tetapi menampilkan petunjuk aktivasi.
+
+| Opsi | Cocok untuk | Env minimal | Catatan |
+| --- | --- | --- | --- |
+| **Gemini** (disarankan) | akurasi terbaik, tanpa kartu kredit | `GEMINI_API_KEY` | Free tier; ambil kunci di [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Default model `gemini-3.8-flash`. |
+| **OpenRouter** | punya kunci OpenRouter / ingin coba model lain | `OPENROUTER_API_KEY` | Pilih model vision varian `:free`, default `google/gemma-4-31b-it:free`. Daftar gratis: [openrouter.ai/models?max_price=0](https://openrouter.ai/models?fmt=table&max_price=0). |
+| **Ollama lokal** | privasi penuh / offline | `OLLAMA_BASE_URL` | Jalankan `ollama pull qwen3-vl:4b` (atau `qwen2.5vl:7b`). Tidak ada data keluar dari komputer. |
+
+Contoh model gratis lain (bisa berubah; sesuaikan env):
+
+- **Gemini**: `gemini-3.8-flash` (default), `gemini-3.6-flash`, `gemini-3.5-flash-lite`.
+- **OpenRouter** (`:free`): `google/gemma-4-31b-it:free`, `google/gemma-4-26b-a4b-it:free`,
+  `nvidia/nemotron-3.5-super-vl:free`, atau `openrouter/free` (router otomatis).
+- **Ollama** (lokal): `qwen3-vl:4b` (default), `qwen3-vl:2b` (RAM kecil), `qwen2.5vl:7b`,
+  `deepseek-ocr:3b` (khusus OCR), `llama3.2-vision:11b`.
+
+Urutan auto-detect: Gemini → OpenRouter → Ollama. Untuk memaksa provider/model tertentu:
+
+```bash
+RECEIPT_AI_PROVIDER=gemini   # gemini | openrouter | ollama
+RECEIPT_AI_MODEL=gemini-3.8-flash
+```
+
+Cara kerja:
+
+1. Foto dari kamera/galeri dikecilkan di browser (±1600 px, JPEG) agar hemat kuota.
+2. Server mengirim gambar + daftar kategori pengeluaran user ke model vision dengan
+   **structured JSON** (Gemini/Ollama) atau prompt JSON (OpenRouter).
+3. Hasil dinormalisasi: nominal `Rp 25.000` → `25000`, tanggal `05/11/2026` → `2026-11-05`,
+   kategori dicocokkan ke kategori user, metode bayar dicocokkan ke nama kantong.
+4. Form transaksi terbuka dengan nominal, tanggal, catatan, kategori, kantong, dan rincian item
+   yang sudah terisi. **Periksa dulu, lalu Simpan.**
+5. Transaksi hasil scan ditandai `source = 'receipt'`; metadata scan (provider, model,
+   confidence, item) disimpan di `transactions.raw_input`. **Foto tidak disimpan.**
+
+> Catatan privasi: pada free tier Gemini/OpenRouter, input dapat dipakai penyedia untuk
+> meningkatkan layanan. Untuk struk sensitif, gunakan Ollama lokal. Jangan pernah commit
+> API key ke git — isi lewat `.env`/`.env.local`.
 
 ## Mode Supabase (multi-user / produksi)
 
