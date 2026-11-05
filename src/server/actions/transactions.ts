@@ -57,6 +57,8 @@ export async function createTransactionAction(
       tags: values.tags,
       items: values.kind === 'expense' ? values.items : undefined,
       clientRequestId: values.clientRequestId ?? null,
+      source: values.source,
+      rawInput: values.rawInput?.trim() ? values.rawInput : null,
     });
     revalidateAppData();
     return { ok: true, data: { id: row.id } };

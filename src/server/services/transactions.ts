@@ -85,6 +85,8 @@ export interface SimpleTransactionInput {
   tags?: string[];
   clientRequestId?: string | null;
   source?: TransactionSource;
+  /** Metadata input mentah (mis. ringkasan hasil scan struk). */
+  rawInput?: string | null;
   /** Rincian item (opsional) — hanya untuk transaksi pengeluaran. */
   items?: ItemLineInput[];
 }
@@ -117,6 +119,7 @@ export async function createTransaction(
           note: input.note ?? null,
           tags: input.tags ?? [],
           source: input.source ?? 'web',
+          rawInput: input.rawInput ?? null,
           clientRequestId: input.clientRequestId ?? null,
         })
         .returning();

@@ -1,5 +1,6 @@
 /** Tipe ringan yang aman dipakai di client component (tanpa import server). */
 
+import type { ReceiptConfidence, ReceiptItemDraft } from './receipt';
 import type { TemplateFrequency } from './template-schedule';
 
 export type SheetMode = 'expense' | 'income' | 'transfer';
@@ -55,6 +56,20 @@ export interface TemplateSummary {
   walletIcon: string | null;
   categoryName: string | null;
   categoryIcon: string | null;
+}
+
+/** Isi form dari hasil scan struk (pengguna tetap harus menekan Simpan). */
+export interface TransactionPrefill {
+  amount: number;
+  walletId: string | null;
+  categoryId: string | null;
+  dateYmd: string | null;
+  note: string | null;
+  items: ReceiptItemDraft[];
+  source: 'receipt';
+  rawInput: string;
+  warnings: string[];
+  confidence: ReceiptConfidence | null;
 }
 
 export interface SheetData {

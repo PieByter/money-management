@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BarChart3, HandCoins, Home, LayoutTemplate, Plus, ReceiptText, Settings, Wallet } from 'lucide-react';
+import { BarChart3, HandCoins, Home, LayoutTemplate, Plus, ReceiptText, ScanLine, Settings, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from './theme-toggle';
 import { useTransactionSheet } from './transaction-sheet-provider';
@@ -24,7 +24,7 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { openCreate } = useTransactionSheet();
+  const { openCreate, openScan } = useTransactionSheet();
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
@@ -63,6 +63,13 @@ export function AppShell({
         >
           <Plus className="h-4 w-4" /> Catat transaksi
         </button>
+        <button
+          type="button"
+          onClick={openScan}
+          className="mt-2 flex h-10 items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ScanLine className="h-4 w-4" /> Scan struk
+        </button>
         <div className="mt-auto space-y-2 border-t border-border pt-4">
           <div className="flex items-center justify-between">
             <span className="truncate px-1 text-xs text-muted-foreground" title={userEmail ?? 'Mode lokal'}>
@@ -93,6 +100,14 @@ export function AppShell({
           </Link>
           <div className="flex items-center gap-0.5">
             <ThemeToggle />
+            <button
+              type="button"
+              onClick={openScan}
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-primary transition-colors hover:bg-muted"
+              aria-label="Scan struk"
+            >
+              <ScanLine className="h-5 w-5" />
+            </button>
             <Link
               href="/templates"
               className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

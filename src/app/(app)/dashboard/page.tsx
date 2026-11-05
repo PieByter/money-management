@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { CategoryDonut, DailyTrend } from '@/components/app/charts';
 import { MonthPicker } from '@/components/app/month-picker';
 import { QuickActions } from '@/components/app/quick-actions';
+import { ScanReceiptButton } from '@/components/app/scan-receipt-button';
 import { StaticTransactionList } from '@/components/app/transaction-list';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { eachDayInRange, jakartaYearMonth, monthKey, monthRangeFromKey } from '@/lib/dates';
@@ -55,6 +56,7 @@ export default async function DashboardPage({
   return (
     <div className="space-y-5">
       <MonthPicker month={month} />
+      <ScanReceiptButton className="lg:hidden" />
       <QuickActions className="hidden lg:block" />
 
       <div className="grid grid-cols-3 gap-2 sm:gap-3">

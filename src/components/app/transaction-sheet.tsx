@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Trash2 } from 'lucide-react';
+import { Sparkles, Trash2 } from 'lucide-react';
 import { Drawer } from 'vaul';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,7 @@ import type {
   SheetData,
   SheetMode,
   TemplateSummary,
+  TransactionPrefill,
   WalletOption,
 } from '@/lib/view-types';
 import {
@@ -60,9 +61,17 @@ interface TransactionSheetProps {
   onOpenChange: (open: boolean) => void;
   createMode: SheetMode;
   editId: string | null;
+  prefill: TransactionPrefill | null;
 }
 
-export function TransactionSheet({ data, open, onOpenChange, createMode, editId }: TransactionSheetProps) {
+export function TransactionSheet({
+  data,
+  open,
+  onOpenChange,
+  createMode,
+  editId,
+  prefill,
+}: TransactionSheetProps) {
   const [mode, setMode] = useState<SheetMode>('expense');
   const [digits, setDigits] = useState('');
   const [feeDigits, setFeeDigits] = useState('');
@@ -77,6 +86,10 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [editKind, setEditKind] = useState<string | null>(null);
   const [itemLines, setItemLines] = useState<ItemLineDraft[]>([]);
+  const [receiptOrigin, setReceiptOrigin] = useState<Pick<
+    TransactionPrefill,
+    'rawInput' | 'warnings' | 'confidence'
+  > | null>(null);
   const router = useRouter();
 
   const isTransferEdit = editKind === 'transfer_in' || editKind === 'transfer_out';
@@ -104,6 +117,7 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
     setItemLines([]);
 
     if (editId) {
+      setReceiptOrigin(null);
       setLoadingEdit(true);
       void getTransactionDetailAction(editId).then((result) => {
         setLoadingEdit(false);
@@ -151,6 +165,23 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
     setToWalletId(null);
     const categories = createMode === 'income' ? data.incomeCategories : data.expenseCategories;
     setCategoryId(createMode === 'transfer' ? null : (categories[0]?.id ?? null));
+
+    if (prefill) {
+      setMode('expense');
+      setDigits(String(prefill.amount));
+      setFromWalletId(prefill.walletId ?? data.lastUsedWalletId ?? data.wallets[0]?.id ?? null);
+      setCategoryId(prefill.categoryId ?? data.expenseCategories[0]?.id ?? null);
+      setDateYmd(prefill.dateYmd ?? jakartaYmd(new Date()));
+      setNote(prefill.note ?? '');
+      setItemLines(prefill.items.map((line) => makeItemLine(line)));
+      setReceiptOrigin({
+        rawInput: prefill.rawInput,
+        warnings: prefill.warnings,
+        confidence: prefill.confidence,
+      });
+    } else {
+      setReceiptOrigin(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editId]);
 
@@ -271,6 +302,8 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
               tags: parsedTags,
               items: cleanLines,
               clientRequestId: requestId,
+              source: receiptOrigin ? 'receipt' : undefined,
+              rawInput: receiptOrigin?.rawInput ?? null,
             });
       if (result.ok) {
         toast.success(mode === 'transfer' ? 'Transfer tersimpan' : 'Transaksi tersimpan');
@@ -282,7 +315,7 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
       setBusy(false);
     }
   }, [
-    amount, busy, categoryId, dateYmd, editId, fee, fromWalletId, itemLines, loadingEdit, mode, note, onOpenChange, requestId, tagsRaw, toWalletId,
+    amount, busy, categoryId, dateYmd, editId, fee, fromWalletId, itemLines, loadingEdit, mode, note, onOpenChange, receiptOrigin, requestId, tagsRaw, toWalletId,
   ]);
 
   // Dukungan keyboard untuk desktop (angka, backspace, Enter).
@@ -427,6 +460,22 @@ export function TransactionSheet({ data, open, onOpenChange, createMode, editId 
             {/* Layar lebar: dua kolom — form (kiri) + numpad & simpan (kanan). */}
             <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(0,1fr)_26rem] lg:gap-8 lg:px-8">
               <div className="flex min-h-0 flex-col overflow-y-auto px-4 pt-2 lg:px-0 lg:pt-4">
+                {receiptOrigin && !editId ? (
+                  <div className="mb-1 flex gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-[11px] leading-relaxed">
+                    <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                    <div>
+                      <span className="font-medium text-foreground">Dari scan struk.</span>{' '}
+                      <span className="text-muted-foreground">
+                        Periksa nominal, tanggal, kategori, dan item sebelum menyimpan.
+                      </span>
+                      {receiptOrigin.warnings.length > 0 ? (
+                        <span className="mt-0.5 block text-muted-foreground">
+                          {receiptOrigin.warnings[0]}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="py-2 text-center lg:pb-4 lg:pt-0 lg:text-left">
                 <div
                   className={cn(

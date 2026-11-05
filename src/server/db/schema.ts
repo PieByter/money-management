@@ -28,7 +28,7 @@ export const TRANSACTION_KINDS = [
   'adjustment_in',
   'adjustment_out',
 ] as const;
-export const TRANSACTION_SOURCES = ['web', 'telegram', 'whatsapp', 'import', 'template'] as const;
+export const TRANSACTION_SOURCES = ['web', 'telegram', 'whatsapp', 'import', 'template', 'receipt'] as const;
 export const TRANSACTION_STATUSES = ['draft', 'confirmed'] as const;
 /**
  * `payable` = hutang (uang yang saya pinjam), `receivable` = piutang
@@ -127,7 +127,7 @@ export const transactions = pgTable(
       sql`${t.kind} in ('income','expense','transfer_in','transfer_out','adjustment_in','adjustment_out')`,
     ),
     check('transactions_amount_check', sql`${t.amount} > 0`),
-    check('transactions_source_check', sql`${t.source} in ('web','telegram','whatsapp','import')`),
+    check('transactions_source_check', sql`${t.source} in ('web','telegram','whatsapp','import','template','receipt')`),
     check('transactions_status_check', sql`${t.status} in ('draft','confirmed')`),
   ],
 );

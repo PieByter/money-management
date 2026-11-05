@@ -73,6 +73,10 @@ export const simpleTransactionSchema = z.object({
   tags: tagsSchema.optional(),
   items: transactionItemsSchema.optional(),
   clientRequestId: uuidSchema.nullish(),
+  /** 'receipt' dipakai hasil scan struk; default 'web'. */
+  source: z.enum(['web', 'receipt']).optional(),
+  /** Metadata hasil scan (JSON ringkas), bukan gambar. */
+  rawInput: z.string().trim().max(4000, 'Metadata scan terlalu panjang').nullish(),
 });
 
 export const transferSchema = z
@@ -249,6 +253,15 @@ export const debtSettleSchema = z.object({
   walletId: uuidSchema,
   date: ymdSchema.nullish(),
   note: noteSchema.nullish(),
+});
+
+/** Payload scan struk: base64 tanpa prefix data URL. */
+export const receiptScanInputSchema = z.object({
+  imageBase64: z
+    .string()
+    .min(100, 'Gambar kosong atau rusak')
+    .max(6_500_000, 'Gambar terlalu besar — pilih foto lain'),
+  mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']),
 });
 
 export const listTransactionsSchema = z.object({

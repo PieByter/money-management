@@ -9,9 +9,12 @@ import { listWallets } from '@/server/services/wallets';
 import { AppShell } from '@/components/app/app-shell';
 import { TransactionSheetProvider } from '@/components/app/transaction-sheet-provider';
 import type { CategoryOption, SheetData } from '@/lib/view-types';
+import { isReceiptAiConfigured } from '@/server/ai/receipt';
 
 // Data keuangan selalu personal & real-time: jangan pernah di-prerender statis.
 export const dynamic = 'force-dynamic';
+// Beri ruang untuk model vision (terutama OpenRouter/Ollama) di serverless.
+export const maxDuration = 60;
 
 function orderByFrequency(list: CategoryOption[], frequentIds: string[]): CategoryOption[] {
   const rank = new Map(frequentIds.map((id, index) => [id, index]));
@@ -89,7 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   };
 
   return (
-    <TransactionSheetProvider data={sheetData}>
+    <TransactionSheetProvider data={sheetData} receiptAiReady={isReceiptAiConfigured()}>
       <AppShell userEmail={user.email}>{children}</AppShell>
     </TransactionSheetProvider>
   );
