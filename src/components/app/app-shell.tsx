@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { BarChart3, HandCoins, Home, LayoutTemplate, Plus, ReceiptText, ScanLine, Settings, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -33,7 +34,15 @@ export function AppShell({
       {/* Sidebar desktop */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-card px-4 py-6 lg:flex">
         <Link href="/dashboard" className="flex items-center gap-2 px-2 text-lg font-semibold">
-          <span aria-hidden>💰</span> Money Tracker
+          <Image
+            src="/icons/logo-128.png"
+            alt=""
+            width={28}
+            height={28}
+            className="h-7 w-7"
+            aria-hidden
+          />
+          Money Tracker
         </Link>
         <nav className="mt-6 flex flex-col gap-1" aria-label="Navigasi utama">
           {NAV_ITEMS.map((item) => {
@@ -96,7 +105,15 @@ export function AppShell({
         {/* Header mobile */}
         <header className="safe-top sticky top-0 z-30 flex items-center justify-between border-b border-border bg-background/90 px-4 py-2.5 backdrop-blur lg:hidden">
           <Link href="/dashboard" className="flex items-center gap-1.5 text-base font-semibold">
-            <span aria-hidden>💰</span> Money Tracker
+            <Image
+              src="/icons/logo-128.png"
+              alt=""
+              width={24}
+              height={24}
+              className="h-6 w-6"
+              aria-hidden
+            />
+            Money Tracker
           </Link>
           <div className="flex items-center gap-0.5">
             <ThemeToggle />

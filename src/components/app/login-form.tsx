@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, LogIn, Send } from 'lucide-react';
@@ -125,8 +126,16 @@ export function LoginForm({
     <div className="flex min-h-dvh flex-col items-center justify-center px-5 py-10">
       <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="text-center">
-          <div className="text-4xl" aria-hidden>
-            💰
+          <div className="flex justify-center">
+            <Image
+              src="/icons/logo-128.png"
+              alt=""
+              width={64}
+              height={64}
+              className="h-16 w-16"
+              priority
+              aria-hidden
+            />
           </div>
           <h1 className="mt-3 text-xl font-semibold">Money Tracker</h1>
           <p className="mt-1 text-sm text-muted-foreground">

@@ -1,5 +1,5 @@
 /* Service worker sederhana: offline shell + cache aset statis (PWA fase 1). */
-const CACHE = "money-tracker-v1";
+const CACHE = "money-tracker-v2";
 const PRECACHE = [
   "/offline",
   "/icons/icon-192.png",

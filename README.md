@@ -223,7 +223,7 @@ Untuk uji login dari HP di jaringan lokal, tambahkan juga `http://<IP-komputer>:
 | `npm run db:generate` | Generate migrasi Drizzle dari `src/server/db/schema.ts`. |
 | `npm run db:migrate` | Jalankan migrasi ke `DATABASE_URL` (atau PGlite bila kosong). |
 | `npm run db:seed` | Seed kategori default (juga otomatis dijalankan saat aplikasi pertama dibuka). |
-| `npm run icons` | Regenerasi ikon PWA (`/public/icons/*`, `src/app/icon.png`, `apple-icon.png`) tanpa dependency. |
+| `npm run icons` | Regenerasi ikon PWA (`/public/icons/*`, `src/app/icon.png`, `apple-icon.png`) dari `public/icons/no-background-mm.png` tanpa dependency. |
 | `npm run commit:auto` | **Pratinjau** rencana commit otomatis (dry-run) — tidak ada commit yang dibuat. |
 | `npm run autocommit` | Buat commit otomatis sesuai rencana (setara `commit:auto -- --apply`). |
 
