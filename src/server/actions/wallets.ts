@@ -53,6 +53,9 @@ export async function createWalletAction(input: unknown): Promise<ActionResult<{
       color: values.color ?? null,
       icon: values.icon ?? null,
       openingBalance: values.openingBalance ?? 0,
+      creditLimit: values.creditLimit ?? null,
+      statementDay: values.statementDay ?? null,
+      dueDay: values.dueDay ?? null,
     });
     revalidateAppLayout();
     return { ok: true, data: { id: wallet.id } };
@@ -75,6 +78,9 @@ export async function updateWalletAction(input: unknown): Promise<ActionResult> 
       type: values.type,
       color: values.color,
       icon: values.icon,
+      creditLimit: values.creditLimit,
+      statementDay: values.statementDay,
+      dueDay: values.dueDay,
     });
     revalidateAppLayout();
     return { ok: true, data: undefined };

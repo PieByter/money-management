@@ -8,6 +8,24 @@ function numberOrZero(value: unknown): number {
   return Number(value ?? 0);
 }
 
+/**
+ * Opsi laporan. `excludeDebt` memisahkan arus kas operasional dari pencairan/
+ * pelunasan pinjaman. Transaksi pinjaman selalu diberi tag `hutang`/`piutang`
+ * oleh service hutang-piutang, jadi tidak perlu join tabel tambahan.
+ */
+export interface ReportFlowOptions {
+  excludeDebt?: boolean;
+}
+
+/** Predikat SQL: transaksi BUKAN arus pinjaman. */
+function withoutDebtFlow() {
+  return sql`not ('hutang' = any(${transactions.tags}) or 'piutang' = any(${transactions.tags}))`;
+}
+
+function flowFilter(options?: ReportFlowOptions) {
+  return options?.excludeDebt ? withoutDebtFlow() : undefined;
+}
+
 export interface MonthSummary {
   income: number;
   expense: number;
@@ -18,6 +36,7 @@ export async function getMonthSummary(
   db: AppDb,
   userId: string,
   month: string,
+  options?: ReportFlowOptions,
 ): Promise<MonthSummary> {
   const { start, end } = monthRangeFromKey(month);
   const rows = await db
@@ -34,6 +53,7 @@ export async function getMonthSummary(
         inArray(transactions.kind, ['income', 'expense']),
         gte(transactions.occurredAt, start),
         lt(transactions.occurredAt, end),
+        flowFilter(options),
       ),
     )
     .groupBy(transactions.kind);
@@ -56,6 +76,7 @@ export async function getCategoryTotals(
   db: AppDb,
   userId: string,
   range: { start: Date; end: Date },
+  options?: ReportFlowOptions,
 ): Promise<{ expense: CategoryTotal[]; income: CategoryTotal[] }> {
   const rows = await db
     .select({
@@ -76,6 +97,7 @@ export async function getCategoryTotals(
         inArray(transactions.kind, ['income', 'expense']),
         gte(transactions.occurredAt, range.start),
         lt(transactions.occurredAt, range.end),
+        flowFilter(options),
       ),
     )
     .groupBy(transactions.categoryId, categories.name, categories.icon, categories.color, transactions.kind)
@@ -102,6 +124,7 @@ export async function getTagTotals(
   db: AppDb,
   userId: string,
   range: { start: Date; end: Date },
+  options?: ReportFlowOptions,
 ): Promise<{ expense: TagTotal[]; income: TagTotal[] }> {
   const rows = await db
     .select({
@@ -116,7 +139,8 @@ export async function getTagTotals(
           and ${transactions.status} = 'confirmed'
           and ${transactions.kind} in ('income','expense')
           and ${transactions.occurredAt} >= ${range.start}
-          and ${transactions.occurredAt} < ${range.end}`,
+          and ${transactions.occurredAt} < ${range.end}
+          ${options?.excludeDebt ? sql`and not ('hutang' = any(${transactions.tags}) or 'piutang' = any(${transactions.tags}))` : sql``}`,
     )
     .groupBy(sql`tag_name, kind`)
     .orderBy(sql`sum(${transactions.amount}) desc`);
@@ -145,6 +169,7 @@ export async function getDailyTotals(
   db: AppDb,
   userId: string,
   range: { start: Date; end: Date },
+  options?: ReportFlowOptions,
 ): Promise<DailyTotal[]> {
   const rows = await db
     .select({
@@ -161,6 +186,7 @@ export async function getDailyTotals(
         inArray(transactions.kind, ['income', 'expense']),
         gte(transactions.occurredAt, range.start),
         lt(transactions.occurredAt, range.end),
+        flowFilter(options),
       ),
     )
     .groupBy(dayExpression, transactions.kind)
@@ -187,7 +213,7 @@ export interface MonthTrendPoint {
 export async function getMonthlyTrend(
   db: AppDb,
   userId: string,
-  opts: { endMonth: string; months?: number },
+  opts: { endMonth: string; months?: number } & ReportFlowOptions,
 ): Promise<MonthTrendPoint[]> {
   const months = opts.months ?? 6;
   const keys: string[] = [];
@@ -213,6 +239,7 @@ export async function getMonthlyTrend(
         inArray(transactions.kind, ['income', 'expense']),
         gte(transactions.occurredAt, start),
         lt(transactions.occurredAt, end),
+        flowFilter(opts),
       ),
     )
     .groupBy(monthExpression, transactions.kind);
@@ -237,6 +264,8 @@ export interface AssetOverview {
     type: string;
     icon: string | null;
     color: string | null;
+    creditLimit: number | null;
+    dueDay: number | null;
     balance: number;
   }[];
 }
@@ -254,6 +283,8 @@ export async function getAssetOverview(
       icon: wallets.icon,
       color: wallets.color,
       sortOrder: wallets.sortOrder,
+      creditLimit: wallets.creditLimit,
+      dueDay: wallets.dueDay,
       balance: sql<number>`coalesce(${walletBalances.balance}, 0)::bigint`,
     })
     .from(wallets)

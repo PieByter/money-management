@@ -3,6 +3,7 @@ import { RECOMMENDED_WALLETS } from '@/lib/wallet-presets';
 import type { AppDb } from '../db/client';
 import {
   debts,
+  goals,
   transactions,
   wallets,
   walletBalances,
@@ -18,6 +19,9 @@ export interface WalletWithBalance {
   icon: string | null;
   sortOrder: number;
   currency: string;
+  creditLimit: number | null;
+  statementDay: number | null;
+  dueDay: number | null;
   archivedAt: Date | null;
   balance: number;
 }
@@ -28,7 +32,14 @@ export interface WalletInput {
   color?: string | null;
   icon?: string | null;
   sortOrder?: number;
-  /** Saldo awal; dicatat sebagai transaksi adjustment_in (bukan kolom saldo). */
+  creditLimit?: number | null;
+  statementDay?: number | null;
+  dueDay?: number | null;
+  /**
+   * Saldo awal; dicatat sebagai transaksi adjustment_in (bukan kolom saldo).
+   * Untuk kartu kredit, angka ini adalah tagihan awal dan dicatat sebagai
+   * adjustment_out sehingga saldo langsung negatif.
+   */
   openingBalance?: number;
 }
 
@@ -40,6 +51,9 @@ const walletSelection = {
   icon: wallets.icon,
   sortOrder: wallets.sortOrder,
   currency: wallets.currency,
+  creditLimit: wallets.creditLimit,
+  statementDay: wallets.statementDay,
+  dueDay: wallets.dueDay,
   archivedAt: wallets.archivedAt,
   balance: sql<number>`coalesce(${walletBalances.balance}, 0)::bigint`,
 };
@@ -118,7 +132,25 @@ export async function createRecommendedWallets(db: AppDb, userId: string): Promi
   return inserted.length;
 }
 
+function validateCreditFields(input: {
+  type: WalletType;
+  creditLimit?: number | null;
+  statementDay?: number | null;
+  dueDay?: number | null;
+}): void {
+  if (input.type !== 'credit') return;
+  if (!input.creditLimit || !Number.isSafeInteger(input.creditLimit) || input.creditLimit <= 0) {
+    throw new Error('Limit kartu kredit wajib diisi');
+  }
+  for (const day of [input.statementDay, input.dueDay]) {
+    if (day !== null && day !== undefined && (!Number.isInteger(day) || day < 1 || day > 31)) {
+      throw new Error('Tanggal statement/jatuh tempo harus 1-31');
+    }
+  }
+}
+
 export async function createWallet(db: AppDb, userId: string, input: WalletInput): Promise<Wallet> {
+  validateCreditFields(input);
   return db.transaction(async (tx) => {
     const [wallet] = await tx
       .insert(wallets)
@@ -129,6 +161,9 @@ export async function createWallet(db: AppDb, userId: string, input: WalletInput
         color: input.color ?? null,
         icon: input.icon ?? null,
         sortOrder: input.sortOrder ?? (await nextSortOrder(tx as AppDb, userId)),
+        creditLimit: input.type === 'credit' ? (input.creditLimit ?? null) : null,
+        statementDay: input.type === 'credit' ? (input.statementDay ?? null) : null,
+        dueDay: input.type === 'credit' ? (input.dueDay ?? null) : null,
       })
       .returning();
 
@@ -136,10 +171,10 @@ export async function createWallet(db: AppDb, userId: string, input: WalletInput
       await tx.insert(transactions).values({
         userId,
         walletId: wallet.id,
-        kind: 'adjustment_in',
+        kind: input.type === 'credit' ? 'adjustment_out' : 'adjustment_in',
         amount: input.openingBalance,
         occurredAt: new Date(),
-        note: 'Saldo awal',
+        note: input.type === 'credit' ? 'Tagihan awal kartu kredit' : 'Saldo awal',
       });
     }
 
@@ -153,6 +188,9 @@ export interface WalletPatch {
   color?: string | null;
   icon?: string | null;
   sortOrder?: number;
+  creditLimit?: number | null;
+  statementDay?: number | null;
+  dueDay?: number | null;
 }
 
 export async function updateWallet(
@@ -161,6 +199,20 @@ export async function updateWallet(
   walletId: string,
   patch: WalletPatch,
 ): Promise<Wallet> {
+  const [current] = await db
+    .select()
+    .from(wallets)
+    .where(and(eq(wallets.userId, userId), eq(wallets.id, walletId)))
+    .limit(1);
+  if (!current) throw new Error('Kantong tidak ditemukan');
+  const nextType = patch.type ?? current.type;
+  validateCreditFields({
+    type: nextType,
+    creditLimit: patch.creditLimit ?? current.creditLimit,
+    statementDay: patch.statementDay ?? current.statementDay,
+    dueDay: patch.dueDay ?? current.dueDay,
+  });
+
   const [row] = await db
     .update(wallets)
     .set({
@@ -169,6 +221,12 @@ export async function updateWallet(
       ...(patch.color !== undefined ? { color: patch.color } : {}),
       ...(patch.icon !== undefined ? { icon: patch.icon } : {}),
       ...(patch.sortOrder !== undefined ? { sortOrder: patch.sortOrder } : {}),
+      ...(patch.creditLimit !== undefined ? { creditLimit: patch.creditLimit } : {}),
+      ...(patch.statementDay !== undefined ? { statementDay: patch.statementDay } : {}),
+      ...(patch.dueDay !== undefined ? { dueDay: patch.dueDay } : {}),
+      ...(nextType !== 'credit'
+        ? { creditLimit: null, statementDay: null, dueDay: null }
+        : {}),
     })
     .where(and(eq(wallets.userId, userId), eq(wallets.id, walletId)))
     .returning();
@@ -217,6 +275,13 @@ export async function deleteWallet(
       ),
     );
   if (Number(debtRef?.value ?? 0) > 0) {
+    return { deleted: false, reason: 'has_transactions' };
+  }
+  const [goalRef] = await db
+    .select({ value: sql<number>`count(*)::int` })
+    .from(goals)
+    .where(and(eq(goals.userId, userId), eq(goals.walletId, walletId)));
+  if (Number(goalRef?.value ?? 0) > 0) {
     return { deleted: false, reason: 'has_transactions' };
   }
   await db.delete(wallets).where(and(eq(wallets.userId, userId), eq(wallets.id, walletId)));

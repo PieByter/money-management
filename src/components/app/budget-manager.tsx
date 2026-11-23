@@ -6,7 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatAmount, parseAmountInput } from '@/lib/money';
 import { cn } from '@/lib/utils';
-import { saveBudgetAction, setBudgetEnabledAction } from '@/server/actions/budgets';
+import {
+  clearMonthlyBudgetAction,
+  saveBudgetAction,
+  saveMonthlyBudgetAction,
+  setBudgetEnabledAction,
+} from '@/server/actions/budgets';
 
 export interface BudgetTarget {
   categoryId: string;
@@ -16,7 +21,15 @@ export interface BudgetTarget {
   enabled: boolean;
 }
 
-export function BudgetManager({ budgets }: { budgets: BudgetTarget[] }) {
+export function BudgetManager({
+  budgets,
+  monthlyBudget,
+}: {
+  budgets: BudgetTarget[];
+  monthlyBudget: number | null;
+}) {
+  const [monthly, setMonthly] = useState(monthlyBudget ? formatAmount(monthlyBudget) : '');
+  const [busyMonthly, setBusyMonthly] = useState(false);
   const [amounts, setAmounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       budgets.map((budget) => [budget.categoryId, budget.amount ? formatAmount(budget.amount) : '']),
@@ -56,76 +69,144 @@ export function BudgetManager({ budgets }: { budgets: BudgetTarget[] }) {
     toast.success(next ? 'Budget dinyalakan' : 'Budget dimatikan');
   }
 
-  if (budgets.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Belum ada kategori pengeluaran. Buat kategori dulu di bagian Kategori.
-      </p>
-    );
+  async function saveMonthly() {
+    const amount = parseAmountInput(monthly);
+    if (amount === null) {
+      toast.error('Isi pagu bulanan dulu (angka rupiah)');
+      return;
+    }
+    setBusyMonthly(true);
+    const result = await saveMonthlyBudgetAction({ amount });
+    setBusyMonthly(false);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success('Pagu bulanan disimpan');
+  }
+
+  async function clearMonthly() {
+    setBusyMonthly(true);
+    const result = await clearMonthlyBudgetAction();
+    setBusyMonthly(false);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    setMonthly('');
+    toast.success('Pagu bulanan dihapus');
   }
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        Budget aktif muncul sebagai progress bar di dashboard. Matikan tombolnya kalau kategori
-        itu sedang tidak mau dipantau — angkanya tetap tersimpan.
-      </p>
-      <ul className="space-y-2.5">
-        {budgets.map((budget) => {
-          const isOn = enabled[budget.categoryId] ?? false;
-          const hasAmount = Boolean((amounts[budget.categoryId] ?? '').trim());
-          const busy = busyId === budget.categoryId;
-          return (
-            <li key={budget.categoryId} className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-sm">
-                {budget.icon ? `${budget.icon} ` : ''}
-                {budget.name}
-              </span>
-              <Input
-                inputMode="numeric"
-                value={amounts[budget.categoryId] ?? ''}
-                onChange={(event) =>
-                  setAmounts((prev) => ({ ...prev, [budget.categoryId]: event.target.value }))
-                }
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void save(budget.categoryId);
-                }}
-                placeholder="Nominal"
-                aria-label={`Budget ${budget.name}`}
-                className="h-9 w-28 shrink-0 text-right tabular-nums"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                disabled={busy || !hasAmount}
-                onClick={() => void save(budget.categoryId)}
-              >
-                Simpan
-              </Button>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={isOn}
-                aria-label={isOn ? `Matikan budget ${budget.name}` : `Nyalakan budget ${budget.name}`}
-                disabled={busy || !hasAmount}
-                onClick={() => void toggle(budget.categoryId, !isOn)}
-                className={cn(
-                  'relative h-6 w-11 shrink-0 rounded-full border transition-colors disabled:opacity-40',
-                  isOn ? 'border-primary bg-primary' : 'border-border bg-muted',
-                )}
-              >
-                <span
-                  className={cn(
-                    'absolute top-0.5 h-4 w-4 rounded-full bg-card transition-all',
-                    isOn ? 'left-6' : 'left-0.5',
-                  )}
-                />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="rounded-xl border border-border bg-muted/30 p-3">
+        <p className="text-sm font-medium">Pagu total bulanan</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Batas belanja sebulan di luar pinjaman. Dipakai untuk menghitung sisa aman per hari
+          di dashboard.
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <Input
+            inputMode="numeric"
+            value={monthly}
+            onChange={(event) => setMonthly(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void saveMonthly();
+            }}
+            placeholder="mis. 4.000.000"
+            aria-label="Pagu budget total bulanan"
+            className="h-9 flex-1 text-right tabular-nums"
+          />
+          <Button
+            size="sm"
+            disabled={busyMonthly || !monthly.trim()}
+            onClick={() => void saveMonthly()}
+          >
+            Simpan
+          </Button>
+          {monthlyBudget ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busyMonthly}
+              onClick={() => void clearMonthly()}
+            >
+              Hapus
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {budgets.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Belum ada kategori pengeluaran. Buat kategori dulu di bagian Kategori.
+        </p>
+      ) : (
+        <>
+          <p className="text-xs text-muted-foreground">
+            Budget per kategori muncul sebagai progress bar di dashboard. Matikan tombolnya kalau
+            kategori itu sedang tidak mau dipantau — angkanya tetap tersimpan.
+          </p>
+          <ul className="space-y-2.5">
+            {budgets.map((budget) => {
+              const isOn = enabled[budget.categoryId] ?? false;
+              const hasAmount = Boolean((amounts[budget.categoryId] ?? '').trim());
+              const busy = busyId === budget.categoryId;
+              return (
+                <li key={budget.categoryId} className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-sm">
+                    {budget.icon ? `${budget.icon} ` : ''}
+                    {budget.name}
+                  </span>
+                  <Input
+                    inputMode="numeric"
+                    value={amounts[budget.categoryId] ?? ''}
+                    onChange={(event) =>
+                      setAmounts((prev) => ({ ...prev, [budget.categoryId]: event.target.value }))
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') void save(budget.categoryId);
+                    }}
+                    placeholder="Nominal"
+                    aria-label={`Budget ${budget.name}`}
+                    className="h-9 w-28 shrink-0 text-right tabular-nums"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={busy || !hasAmount}
+                    onClick={() => void save(budget.categoryId)}
+                  >
+                    Simpan
+                  </Button>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isOn}
+                    aria-label={
+                      isOn ? `Matikan budget ${budget.name}` : `Nyalakan budget ${budget.name}`
+                    }
+                    disabled={busy || !hasAmount}
+                    onClick={() => void toggle(budget.categoryId, !isOn)}
+                    className={cn(
+                      'relative h-6 w-11 shrink-0 rounded-full border transition-colors disabled:opacity-40',
+                      isOn ? 'border-primary bg-primary' : 'border-border bg-muted',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-0.5 h-4 w-4 rounded-full bg-card transition-all',
+                        isOn ? 'left-6' : 'left-0.5',
+                      )}
+                    />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

@@ -281,7 +281,9 @@ unique (user_id, client_request_id)
 
 ## 10. Rancangan Fase 2: Telegram / WhatsApp
 
-Tidak dibangun sekarang, tetapi keputusan fase 1 harus mendukungnya.
+**Status v0.2:** MVP Telegram sudah dibangun (lihat §16.8) — tautan token, parser
+deterministik, webhook idempoten, dan balasan saldo. WhatsApp belum dibangun; tabel
+`channel_links` sudah mengenal channel `whatsapp`.
 
 **Alur:** pesan masuk → webhook (`/api/webhooks/telegram`) → verifikasi secret token + idempotensi (`external_message_id`) → map `chat_id` ke `user_id` → parser → (jika yakin) buat transaksi, (jika ragu) buat `draft` dan balas dengan tombol konfirmasi → balasan ringkas berisi saldo kantong.
 
@@ -317,7 +319,7 @@ Tidak dibangun sekarang, tetapi keputusan fase 1 harus mendukungnya.
 | M3 | Dashboard bulan ini, grafik, saldo kantong | 3 hari |
 | M4 | PWA, polish UX mobile, dark mode, rekonsiliasi, ekspor CSV | 3 hari |
 | M5 | Beta pribadi 2 minggu, perbaikan | 2 minggu |
-| Fase 2 | Telegram bot, parser, konfirmasi draft | menyusul |
+| Fase 2 | Telegram bot, parser, webhook idempoten | MVP selesai (v0.2) |
 
 ## 13. Risiko dan Mitigasi
 
@@ -347,3 +349,95 @@ Tidak dibangun sekarang, tetapi keputusan fase 1 harus mendukungnya.
 - Lighthouse PWA/Performance/Accessibility ≥ 90.
 - Migrasi dan seed berjalan dari nol dengan satu perintah.
 - Dokumentasi singkat env var, setup Supabase, dan cara menjalankan lokal.
+
+## 16. Roadmap Pengembangan Lanjutan (v0.2)
+
+Sepuluh area berikut dikerjakan **satu per satu** setelah Fase 1 stabil. Status di
+bawah adalah sumber kebenaran progres; centang hanya setelah fitur punya UI,
+service layer, migrasi (bila perlu), dan tes/verifikasi.
+
+| # | Area | Nilai utama | Status |
+| --- | --- | --- | --- |
+| 1 | Kekayaan bersih (net worth) | Menyatukan aset, piutang, dan utang dalam satu angka. | [x] Selesai |
+| 2 | Arus kas operasional vs pinjaman | Laporan bulanan tidak lagi menggelembung karena pencairan/pelunasan pinjaman. | [x] Selesai |
+| 3 | Kartu "Akan datang" + pengingat | Template terjadwal dan jatuh tempo pinjaman terlihat sebelum terlewat; posting terjadwal tidak bergantung pada aplikasi dibuka. | [x] Selesai |
+| 4 | Budget total + sisa aman harian | Pagu belanja bulanan di luar pinjaman, plus angka "boleh belanja berapa hari ini". | [x] Selesai |
+| 5 | Tujuan tabungan (goals) | Target dana darurat/liburan dengan progres dari saldo kantong khusus. | [x] Selesai |
+| 6 | Antrean tulis offline | Transaksi tetap tercatat saat sinyal buruk, dikirim ulang dengan idempotensi. | [x] Selesai |
+| 7 | Import CSV + backup/restore JSON | Pindah data dari Excel/aplikasi lain dan cadangkan seluruh data. | [x] Selesai |
+| 8 | Telegram bot (Fase 2) | Input `makan siang 25rb gopay` lewat chat, tanpa membuka aplikasi. | [x] Selesai |
+| 9 | Kartu kredit / paylater | Limit, tanggal statement, jatuh tempo, dan sisa tagihan yang benar. | [x] Selesai |
+| 10 | Kualitas rilis | E2E Playwright, pelaporan error opsional (Sentry), dan rate limit mutasi. | [x] Selesai |
+
+### 16.1 Kekayaan bersih
+
+- Rumus: **aset (saldo semua kantong) + piutang berjalan − utang berjalan**.
+- Kartu baru di dashboard dan laporan; rincian aset/piutang/utang tetap terlihat.
+- Kartu kredit (item 9) otomatis mengurangi aset karena saldonya negatif.
+
+### 16.2 Arus kas operasional vs pinjaman
+
+- Toggle **Semua arus kas / Operasional** di dashboard dan laporan.
+- Mode operasional mengecualikan transaksi bertag `hutang`/`piutang` dari ringkasan,
+  kategori, tren harian, tren bulanan, dan breakdown tag.
+- Default tetap **Semua arus kas** agar angka kas riil tidak hilang.
+
+### 16.3 Kartu "Akan datang" + pengingat
+
+- Dashboard menampilkan template terjadwal dan jatuh tempo pinjaman dalam 14 hari
+  (termasuk yang sudah terlewat).
+- Endpoint cron `/api/cron/templates` memposting template jatuh tempo untuk semua
+  user, sehingga tidak bergantung pada ada tidaknya user membuka aplikasi.
+- `vercel.json` menjadwalkan cron harian; `CRON_SECRET` melindungi endpoint.
+
+### 16.4 Budget total + sisa aman harian
+
+- Tabel `budget_settings` menyimpan pagu bulanan per user (opsional).
+- Progres memakai pengeluaran bulan berjalan **di luar transaksi pinjaman**.
+- "Sisa aman per hari" = sisa budget ÷ hari tersisa (termasuk hari ini).
+- Bisa dihapus tanpa menghapus budget per kategori.
+
+### 16.5 Tujuan tabungan
+
+- Tabel `goals`: nama, target, kantong khusus, tanggal target opsional, catatan.
+- Progres = saldo kantong (bukan kolom yang diedit manual), sehingga konsisten
+  dengan ledger dan ikut terkoreksi saat transaksi dihapus.
+- Satu kantong hanya boleh menjadi sumber satu goal aktif.
+
+### 16.6 Antrean tulis offline
+
+- Queue di IndexedDB untuk transaksi baru (pemasukan, pengeluaran, transfer).
+- Setiap entri membawa `client_request_id`, jadi retry tidak membuat duplikat.
+- Indikator jumlah antrean + tombol kirim ulang; flush otomatis saat online.
+- Edit/hapus saat offline tetap ditolak dengan pesan jelas (butuh data terbaru).
+
+### 16.7 Import CSV + backup/restore JSON
+
+- Import CSV dengan pratinjau, validasi baris, dan pembuatan kantong/kategori yang
+  belum ada; format mengikuti ekspor aplikasi.
+- Backup JSON berisi seluruh data user (kantong, kategori, transaksi, item,
+  template, budget, goal, hutang/piutang).
+- Restore bersifat **mengganti** data user dan wajib konfirmasi ketik `PULIHKAN`.
+
+### 16.8 Telegram bot
+
+- Tabel `channel_links`, `channel_link_tokens`, dan `ingest_events` (idempotensi
+  berdasarkan `external_message_id`).
+- Perintah `/start <token>` menautkan chat ke akun; token dibuat dari Pengaturan.
+- Parser deterministik untuk nominal (`25rb`, `5jt`), wallet/kategori fuzzy, dan
+  pola transfer; input tak dikenal dibalas petunjuk, bukan transaksi asal-asalan.
+- Balasan berisi ringkasan transaksi + saldo kantong.
+
+### 16.9 Kartu kredit / paylater
+
+- Tipe kantong baru `credit` dengan limit, tanggal statement, dan tanggal jatuh tempo.
+- Pemakaian dicatat sebagai `expense` (saldo negatif), pembayaran sebagai transfer
+  dari kantong lain; sisa tagihan = `−saldo`.
+- Kartu kredit tidak bisa dipakai sebagai kantong sumber goal.
+
+### 16.10 Kualitas rilis
+
+- Rate limit in-memory untuk mutasi sensitif (transaksi, scan struk, import,
+  restore, tautan Telegram) agar double-submit/abuse tidak membebani server.
+- Pelaporan error terstruktur; integrasi Sentry opsional lewat `SENTRY_DSN`.
+- E2E Playwright untuk alur kritis (dashboard, tambah transaksi, laporan).

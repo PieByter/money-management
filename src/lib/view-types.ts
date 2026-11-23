@@ -88,6 +88,7 @@ export const WALLET_TYPE_LABELS: Record<string, string> = {
   bank: 'Rekening bank',
   ewallet: 'Dompet digital',
   other: 'Lainnya',
+  credit: 'Kartu kredit / paylater',
 };
 
 export const WALLET_TYPE_OPTIONS = [
@@ -95,6 +96,7 @@ export const WALLET_TYPE_OPTIONS = [
   { value: 'bank', label: 'Bank' },
   { value: 'ewallet', label: 'E-wallet' },
   { value: 'other', label: 'Lainnya' },
+  { value: 'credit', label: 'Kredit' },
 ] as const;
 
 export const WALLET_ICONS = [

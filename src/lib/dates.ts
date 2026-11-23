@@ -79,6 +79,13 @@ export function resolveOccurredAt(ymd: string | null | undefined, reference: Dat
   return jakartaDateAtNoonUtc(ymd);
 }
 
+/** 'YYYY-MM-DD' + 'HH:mm' (kalender/jam Jakarta) → instant UTC. */
+export function jakartaInstantFromYmdTime(ymd: string, time: string): Date {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const [hour, minute] = time.split(':').map(Number);
+  return new Date(Date.UTC(y, m - 1, d, hour, minute) - WIB_OFFSET_MS);
+}
+
 /** Instant DateTimeLocal (yyyy-MM-ddTHH:mm lokal browser) → Date. */
 export function parseDateTimeLocal(value: string): Date | null {
   const parsed = new Date(value);

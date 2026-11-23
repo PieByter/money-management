@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
-import { monthRangeFromKey } from '@/lib/dates';
+import { jakartaYmd, monthRangeFromKey } from '@/lib/dates';
 import type { AppDb } from '../db/client';
-import { budgets, categories, transactions } from '../db/schema';
+import { budgetSettings, budgets, categories, transactions } from '../db/schema';
 import { ServiceError } from './transactions';
 
 export interface BudgetEntry {
@@ -78,6 +78,99 @@ export async function setBudgetEnabled(
   if (updated.length === 0) {
     throw new ServiceError('Budget untuk kategori ini belum diatur');
   }
+}
+
+/** Pagu belanja total bulanan user, null bila belum diatur. */
+export async function getMonthlyBudget(db: AppDb, userId: string): Promise<number | null> {
+  const [row] = await db
+    .select({ monthlyBudget: budgetSettings.monthlyBudget })
+    .from(budgetSettings)
+    .where(eq(budgetSettings.userId, userId))
+    .limit(1);
+  return row ? Number(row.monthlyBudget) : null;
+}
+
+export async function saveMonthlyBudget(
+  db: AppDb,
+  userId: string,
+  amount: number,
+): Promise<void> {
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    throw new ServiceError('Nominal budget tidak valid');
+  }
+  await db
+    .insert(budgetSettings)
+    .values({ userId, monthlyBudget: amount })
+    .onConflictDoUpdate({
+      target: budgetSettings.userId,
+      set: { monthlyBudget: amount, updatedAt: new Date() },
+    });
+}
+
+export async function clearMonthlyBudget(db: AppDb, userId: string): Promise<void> {
+  await db.delete(budgetSettings).where(eq(budgetSettings.userId, userId));
+}
+
+export interface MonthlyBudgetProgress {
+  limit: number;
+  spent: number;
+  remaining: number;
+  ratio: number;
+  over: boolean;
+  daysInMonth: number;
+  daysLeft: number;
+  /** Sisa budget dibagi hari tersisa; 0 bila sudah lewat/over. */
+  safePerDay: number;
+}
+
+/**
+ * Progres pagu bulanan. Pengeluaran pinjaman (tag `hutang`/`piutang`) tidak
+ * dihitung supaya angsuran tidak "memakan" budget belanja harian.
+ */
+export async function getMonthlyBudgetProgress(
+  db: AppDb,
+  userId: string,
+  month: string,
+): Promise<MonthlyBudgetProgress | null> {
+  const limit = await getMonthlyBudget(db, userId);
+  if (limit === null) return null;
+
+  const { start, end } = monthRangeFromKey(month);
+  const [row] = await db
+    .select({ spent: sql<number>`coalesce(sum(${transactions.amount}), 0)::bigint` })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.kind, 'expense'),
+        eq(transactions.status, 'confirmed'),
+        isNull(transactions.deletedAt),
+        gte(transactions.occurredAt, start),
+        lt(transactions.occurredAt, end),
+        sql`not ('hutang' = any(${transactions.tags}) or 'piutang' = any(${transactions.tags}))`,
+      ),
+    );
+
+  const spent = Number(row?.spent ?? 0);
+  const remaining = limit - spent;
+  const daysInMonth = Math.round((end.getTime() - start.getTime()) / 86_400_000);
+  const todayYmd = jakartaYmd(new Date());
+  const todayMonth = todayYmd.slice(0, 7);
+  let daysLeft: number;
+  if (month < todayMonth) daysLeft = 0;
+  else if (month > todayMonth) daysLeft = daysInMonth;
+  else daysLeft = Math.max(daysInMonth - Number(todayYmd.slice(8, 10)) + 1, 1);
+
+  return {
+    limit,
+    spent,
+    remaining,
+    ratio: limit > 0 ? spent / limit : 0,
+    over: spent > limit,
+    daysInMonth,
+    daysLeft,
+    safePerDay: daysLeft > 0 && remaining > 0 ? Math.floor(remaining / daysLeft) : 0,
+  };
 }
 
 export interface BudgetProgress {

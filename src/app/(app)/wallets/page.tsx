@@ -21,7 +21,17 @@ function toTarget(wallet: WalletWithBalance) {
     color: wallet.color,
     balance: wallet.balance,
     archived: Boolean(wallet.archivedAt),
+    creditLimit: wallet.creditLimit,
+    statementDay: wallet.statementDay,
+    dueDay: wallet.dueDay,
   };
+}
+
+function walletBalanceLabel(wallet: WalletWithBalance): string {
+  if (wallet.type === 'credit') {
+    return formatIdr(Math.max(-wallet.balance, 0));
+  }
+  return formatIdr(wallet.balance);
 }
 
 export default async function WalletsPage() {
@@ -82,11 +92,26 @@ export default async function WalletsPage() {
                   <span className="block truncate text-sm font-medium">{wallet.name}</span>
                   <span className="block text-xs text-muted-foreground">
                     {WALLET_TYPE_LABELS[wallet.type] ?? wallet.type}
+                    {wallet.type === 'credit' && wallet.creditLimit
+                      ? ` · limit ${formatIdr(wallet.creditLimit)}`
+                      : ''}
+                    {wallet.type === 'credit' && wallet.dueDay
+                      ? ` · jatuh tempo tgl ${wallet.dueDay}`
+                      : ''}
                   </span>
                 </span>
               </Link>
               <span className="shrink-0 text-sm font-semibold tabular-nums">
-                {formatIdr(wallet.balance)}
+                {wallet.type === 'credit' ? (
+                  <>
+                    <span className="block text-[10px] font-normal text-muted-foreground">
+                      Tagihan
+                    </span>
+                    {walletBalanceLabel(wallet)}
+                  </>
+                ) : (
+                  walletBalanceLabel(wallet)
+                )}
               </span>
               <WalletActionsMenu wallet={toTarget(wallet)} />
             </div>

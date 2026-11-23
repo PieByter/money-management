@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { CategoryDonut, MonthlyTrend } from '@/components/app/charts';
+import { FlowToggle, flowModeFromParam } from '@/components/app/flow-toggle';
 import { MonthPicker } from '@/components/app/month-picker';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { jakartaYearMonth, monthKey, monthLabel, monthRangeFromKey, parseMonthKey, shiftMonthKey } from '@/lib/dates';
@@ -8,31 +9,46 @@ import { cn } from '@/lib/utils';
 import { monthKeySchema } from '@/lib/schemas';
 import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
-import { getCategoryTotals, getMonthSummary, getMonthlyTrend, getTagTotals } from '@/server/services/reports';
+import { getDebtSummary } from '@/server/services/debts';
+import {
+  getAssetOverview,
+  getCategoryTotals,
+  getMonthSummary,
+  getMonthlyTrend,
+  getTagTotals,
+} from '@/server/services/reports';
 
 export const metadata = { title: 'Laporan' };
 
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string }>;
+  searchParams: Promise<{ m?: string; flow?: string }>;
 }) {
   const params = await searchParams;
   const monthParam = monthKeySchema.safeParse(params.m);
   const month = monthParam.success ? params.m! : monthKey(jakartaYearMonth());
   const prevMonth = shiftMonthKey(month, -1);
+  const flow = flowModeFromParam(params.flow);
+  const flowOptions = { excludeDebt: flow === 'operational' };
 
   const user = await requireUser();
   const db = await getDb();
   const range = monthRangeFromKey(month);
 
-  const [current, previous, trend, categoryTotals, tagTotals] = await Promise.all([
-    getMonthSummary(db, user.id, month),
-    getMonthSummary(db, user.id, prevMonth),
-    getMonthlyTrend(db, user.id, { endMonth: month, months: 6 }),
-    getCategoryTotals(db, user.id, range),
-    getTagTotals(db, user.id, range),
-  ]);
+  const [current, previous, trend, categoryTotals, tagTotals, assets, debtSummary] =
+    await Promise.all([
+      getMonthSummary(db, user.id, month, flowOptions),
+      getMonthSummary(db, user.id, prevMonth, flowOptions),
+      getMonthlyTrend(db, user.id, { endMonth: month, months: 6, ...flowOptions }),
+      getCategoryTotals(db, user.id, range, flowOptions),
+      getTagTotals(db, user.id, range, flowOptions),
+      getAssetOverview(db, user.id),
+      getDebtSummary(db, user.id),
+    ]);
+
+  const netWorth =
+    assets.total + debtSummary.receivableOutstanding - debtSummary.payableOutstanding;
 
   const rows = [
     { label: 'Masuk', current: current.income, previous: previous.income, tone: 'text-income' },
@@ -44,6 +60,30 @@ export default async function ReportsPage({
     <div className="space-y-5">
       <h1 className="text-lg font-semibold">Laporan</h1>
       <MonthPicker month={month} />
+      <FlowToggle basePath="/reports" month={month} mode={flow} />
+      {flow === 'operational' ? (
+        <p className="rounded-xl bg-muted/60 px-3 py-2 text-[11px] text-muted-foreground">
+          Mode operasional mengecualikan pencairan pinjaman, pemberian piutang, dan
+          angsuran/pelunasan dari laporan.
+        </p>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Posisi keuangan saat ini</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <NetWorthItem label="Kekayaan bersih" value={netWorth} strong />
+            <NetWorthItem label="Aset" value={assets.total} />
+            <NetWorthItem label="Piutang" value={debtSummary.receivableOutstanding} tone="income" />
+            <NetWorthItem label="Utang" value={debtSummary.payableOutstanding} tone="expense" />
+          </div>
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            Kekayaan bersih = aset kantong + piutang berjalan − utang berjalan.
+          </p>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -173,6 +213,34 @@ export default async function ReportsPage({
           </CardContent>
         </Card>
       ) : null}
+    </div>
+  );
+}
+
+function NetWorthItem({
+  label,
+  value,
+  strong,
+  tone,
+}: {
+  label: string;
+  value: number;
+  strong?: boolean;
+  tone?: 'income' | 'expense';
+}) {
+  return (
+    <div className="rounded-xl bg-muted/50 px-3 py-2">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p
+        className={cn(
+          'mt-0.5 truncate font-semibold tabular-nums',
+          strong ? 'text-sm' : 'text-xs',
+          tone === 'income' ? 'text-income' : tone === 'expense' ? 'text-expense' : undefined,
+        )}
+      >
+        {tone === 'income' ? '+' : tone === 'expense' ? '−' : ''}
+        {formatIdr(value)}
+      </p>
     </div>
   );
 }

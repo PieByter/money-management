@@ -1,7 +1,9 @@
 import Link from 'next/link';
-import { Download, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { BudgetManager } from '@/components/app/budget-manager';
 import { CategoryManager } from '@/components/app/category-manager';
+import { DataTools } from '@/components/app/data-tools';
+import { TelegramCard } from '@/components/app/telegram-card';
 import { DeleteAccountCard } from '@/components/app/delete-account-card';
 import { ThemeSelector } from '@/components/app/theme-toggle';
 import { buttonVariants } from '@/components/ui/button';
@@ -11,17 +13,20 @@ import { cn } from '@/lib/utils';
 import { signOutAction } from '@/server/actions/auth';
 import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
-import { listBudgets } from '@/server/services/budgets';
+import { getMonthlyBudget, listBudgets } from '@/server/services/budgets';
 import { listCategories } from '@/server/services/categories';
+import { getTelegramStatus } from '@/server/services/telegram';
 
 export const metadata = { title: 'Pengaturan' };
 
 export default async function SettingsPage() {
   const user = await requireUser();
   const db = await getDb();
-  const [categories, budgets] = await Promise.all([
+  const [categories, budgets, monthlyBudget, telegram] = await Promise.all([
     listCategories(db, user.id, { includeArchived: true }),
     listBudgets(db, user.id),
+    getMonthlyBudget(db, user.id),
+    getTelegramStatus(db, user.id),
   ]);
   const supabaseMode = isSupabaseConfigured();
   const budgetByCategory = new Map(budgets.map((budget) => [budget.categoryId, budget]));
@@ -74,7 +79,7 @@ export default async function SettingsPage() {
           <CardTitle>Budget bulanan</CardTitle>
         </CardHeader>
         <CardContent>
-          <BudgetManager budgets={budgetTargets} />
+          <BudgetManager budgets={budgetTargets} monthlyBudget={monthlyBudget} />
         </CardContent>
       </Card>
 
@@ -121,6 +126,37 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
+      <Card id="tujuan" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle>Tujuan tabungan</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">
+            Dana darurat, liburan, atau target lain dengan kantong khusus dan progres otomatis.
+          </p>
+          <Link href="/goals" className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'shrink-0')}>
+            Buka
+          </Link>
+        </CardContent>
+      </Card>
+
+      <Card id="telegram" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle>Telegram</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <TelegramCard
+            status={{
+              linked: telegram.linked,
+              chatId: telegram.chatId,
+              verifiedAt: telegram.verifiedAt ? telegram.verifiedAt.toISOString() : null,
+              configured: telegram.configured,
+              botUsername: telegram.botUsername,
+            }}
+          />
+        </CardContent>
+      </Card>
+
       <Card id="pinjaman" className="scroll-mt-20">
         <CardHeader>
           <CardTitle>Hutang &amp; piutang</CardTitle>
@@ -140,14 +176,8 @@ export default async function SettingsPage() {
         <CardHeader>
           <CardTitle>Data</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <a href="/api/export" download className={cn(buttonVariants({ variant: 'outline' }), 'w-full sm:w-auto')}>
-            <Download /> Ekspor semua transaksi (CSV)
-          </a>
-          <p className="text-xs text-muted-foreground">
-            CSV berisi tanggal, tipe, kantong, kategori, nominal, dan catatan — siap dibuka
-            di Excel/Google Sheets.
-          </p>
+        <CardContent>
+          <DataTools />
         </CardContent>
       </Card>
 

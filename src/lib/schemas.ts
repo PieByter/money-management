@@ -33,7 +33,7 @@ export const feeAmountSchema = z
   .min(0, 'Biaya admin tidak boleh negatif')
   .max(MAX_AMOUNT, 'Nominal terlalu besar');
 
-export const walletTypeSchema = z.enum(['cash', 'bank', 'ewallet', 'other']);
+export const walletTypeSchema = z.enum(['cash', 'bank', 'ewallet', 'other', 'credit']);
 export const categoryKindSchema = z.enum(['income', 'expense']);
 
 const nameSchema = z.string().trim().min(1, 'Nama wajib diisi').max(60, 'Nama terlalu panjang');
@@ -178,6 +178,14 @@ export const walletFormSchema = z.object({
     .min(0, 'Saldo awal tidak boleh negatif')
     .max(MAX_AMOUNT, 'Nominal terlalu besar')
     .optional(),
+  creditLimit: z
+    .number()
+    .int()
+    .positive('Limit harus lebih dari 0')
+    .max(MAX_AMOUNT, 'Nominal terlalu besar')
+    .nullish(),
+  statementDay: z.number().int().min(1).max(31).nullish(),
+  dueDay: z.number().int().min(1).max(31).nullish(),
 });
 
 export const categoryFormSchema = z.object({
@@ -197,6 +205,10 @@ export const budgetToggleSchema = z.object({
   enabled: z.boolean(),
 });
 
+export const monthlyBudgetSchema = z.object({
+  amount: amountSchema,
+});
+
 export const reconcileSchema = z.object({
   walletId: uuidSchema,
   actualBalance: z
@@ -205,6 +217,20 @@ export const reconcileSchema = z.object({
     .min(-MAX_AMOUNT)
     .max(MAX_AMOUNT, 'Nominal terlalu besar'),
   note: noteSchema.nullish(),
+});
+
+export const goalFormSchema = z.object({
+  id: uuidSchema.optional(),
+  name: nameSchema,
+  targetAmount: amountSchema,
+  walletId: uuidSchema,
+  targetDate: ymdSchema.nullish(),
+  note: noteSchema.nullish(),
+});
+
+export const goalArchiveSchema = z.object({
+  goalId: uuidSchema,
+  archived: z.boolean(),
 });
 
 /** Hutang (`payable`) atau piutang (`receivable`). */
@@ -264,6 +290,33 @@ export const receiptScanInputSchema = z.object({
   mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']),
 });
 
+/** Satu baris CSV yang sudah dinormalisasi di client sebelum dikirim ke server. */
+export const csvImportRowSchema = z.object({
+  date: ymdSchema,
+  time: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Jam harus HH:mm')
+    .nullish(),
+  kind: z.enum([
+    'income',
+    'expense',
+    'transfer_in',
+    'transfer_out',
+    'adjustment_in',
+    'adjustment_out',
+  ]),
+  walletName: z.string().trim().min(1, 'Nama kantong wajib diisi').max(60),
+  categoryName: z.string().trim().max(60).nullish(),
+  amount: amountSchema,
+  note: noteSchema.nullish(),
+  tags: tagsSchema.optional(),
+  groupId: uuidSchema.nullish(),
+});
+
+export const csvImportInputSchema = z.object({
+  rows: z.array(csvImportRowSchema).min(1, 'Tidak ada baris untuk diimpor').max(5000, 'Maksimal 5000 baris'),
+});
+
 export const listTransactionsSchema = z.object({
   month: monthKeySchema.nullish(),
   walletId: uuidSchema.nullish(),
@@ -283,3 +336,4 @@ export type ReconcileValues = z.infer<typeof reconcileSchema>;
 export type ListTransactionsValues = z.infer<typeof listTransactionsSchema>;
 export type DebtFormValues = z.infer<typeof debtFormSchema>;
 export type TemplateFormValues = z.infer<typeof templateFormSchema>;
+export type CsvImportRow = z.infer<typeof csvImportRowSchema>;

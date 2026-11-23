@@ -2,10 +2,15 @@
 
 import type { ActionResult } from '@/lib/action-types';
 import { fail } from '@/lib/action-types';
-import { budgetFormSchema, budgetToggleSchema } from '@/lib/schemas';
+import { budgetFormSchema, budgetToggleSchema, monthlyBudgetSchema } from '@/lib/schemas';
 import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
-import { saveBudget, setBudgetEnabled } from '@/server/services/budgets';
+import {
+  clearMonthlyBudget,
+  saveBudget,
+  saveMonthlyBudget,
+  setBudgetEnabled,
+} from '@/server/services/budgets';
 import { errorMessage, revalidateAppData } from './shared';
 
 export async function saveBudgetAction(input: unknown): Promise<ActionResult> {
@@ -17,6 +22,31 @@ export async function saveBudgetAction(input: unknown): Promise<ActionResult> {
       categoryId: values.categoryId,
       amount: values.amount,
     });
+    revalidateAppData();
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return fail(errorMessage(error));
+  }
+}
+
+export async function saveMonthlyBudgetAction(input: unknown): Promise<ActionResult> {
+  try {
+    const user = await requireUser();
+    const values = monthlyBudgetSchema.parse(input);
+    const db = await getDb();
+    await saveMonthlyBudget(db, user.id, values.amount);
+    revalidateAppData();
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return fail(errorMessage(error));
+  }
+}
+
+export async function clearMonthlyBudgetAction(): Promise<ActionResult> {
+  try {
+    const user = await requireUser();
+    const db = await getDb();
+    await clearMonthlyBudget(db, user.id);
     revalidateAppData();
     return { ok: true, data: undefined };
   } catch (error) {

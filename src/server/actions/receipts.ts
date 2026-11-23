@@ -10,7 +10,7 @@ import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
 import { listCategories } from '@/server/services/categories';
 import { listWallets } from '@/server/services/wallets';
-import { errorMessage } from './shared';
+import { enforceRateLimit, errorMessage } from './shared';
 
 /**
  * Scan foto struk → draft transaksi. Pengguna tetap harus menekan Simpan;
@@ -21,6 +21,7 @@ export async function scanReceiptAction(
 ): Promise<ActionResult<ReceiptScanDraft>> {
   try {
     const user = await requireUser();
+    enforceRateLimit(`receipt:scan:${user.id}`, 10, 10 * 60_000);
     const values = receiptScanInputSchema.parse(input);
 
     const imageBase64 = values.imageBase64.replace(/\s/g, '');

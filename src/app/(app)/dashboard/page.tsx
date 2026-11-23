@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { CategoryDonut, DailyTrend } from '@/components/app/charts';
+import { FlowToggle, flowModeFromParam } from '@/components/app/flow-toggle';
 import { MonthPicker } from '@/components/app/month-picker';
 import { QuickActions } from '@/components/app/quick-actions';
 import { ScanReceiptButton } from '@/components/app/scan-receipt-button';
 import { StaticTransactionList } from '@/components/app/transaction-list';
+import { UpcomingCard } from '@/components/app/upcoming-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { eachDayInRange, jakartaYearMonth, monthKey, monthRangeFromKey } from '@/lib/dates';
 import { formatIdr } from '@/lib/money';
@@ -12,8 +14,9 @@ import { monthKeySchema } from '@/lib/schemas';
 import { WALLET_TYPE_LABELS } from '@/lib/view-types';
 import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
-import { getBudgetProgress } from '@/server/services/budgets';
+import { getBudgetProgress, getMonthlyBudgetProgress } from '@/server/services/budgets';
 import { getDebtSummary } from '@/server/services/debts';
+import { listGoals } from '@/server/services/goals';
 import {
   getAssetOverview,
   getCategoryTotals,
@@ -21,32 +24,53 @@ import {
   getMonthSummary,
   getRecentTransactions,
 } from '@/server/services/reports';
+import { getUpcoming } from '@/server/services/upcoming';
 
 export const metadata = { title: 'Dashboard' };
 
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string }>;
+  searchParams: Promise<{ m?: string; flow?: string }>;
 }) {
   const params = await searchParams;
   const monthParam = monthKeySchema.safeParse(params.m);
   const month = monthParam.success ? params.m! : monthKey(jakartaYearMonth());
+  const flow = flowModeFromParam(params.flow);
+  const flowOptions = { excludeDebt: flow === 'operational' };
 
   const user = await requireUser();
   const db = await getDb();
   const range = monthRangeFromKey(month);
 
-  const [summary, assets, categoryTotals, daily, recent, budgetProgress, debtSummary] =
-    await Promise.all([
-      getMonthSummary(db, user.id, month),
-      getAssetOverview(db, user.id),
-      getCategoryTotals(db, user.id, range),
-      getDailyTotals(db, user.id, range),
-      getRecentTransactions(db, user.id, 5),
-      getBudgetProgress(db, user.id, month),
-      getDebtSummary(db, user.id),
-    ]);
+  const [
+    summary,
+    assets,
+    categoryTotals,
+    daily,
+    recent,
+    budgetProgress,
+    monthlyBudget,
+    debtSummary,
+    upcoming,
+    goals,
+  ] = await Promise.all([
+    getMonthSummary(db, user.id, month, flowOptions),
+    getAssetOverview(db, user.id),
+    getCategoryTotals(db, user.id, range, flowOptions),
+    getDailyTotals(db, user.id, range, flowOptions),
+    getRecentTransactions(db, user.id, 5),
+    getBudgetProgress(db, user.id, month),
+    getMonthlyBudgetProgress(db, user.id, month),
+    getDebtSummary(db, user.id),
+    getUpcoming(db, user.id),
+    listGoals(db, user.id),
+  ]);
+
+  const activeGoals = goals.slice(0, 2);
+
+  const netWorth =
+    assets.total + debtSummary.receivableOutstanding - debtSummary.payableOutstanding;
 
   const dailyData = eachDayInRange(range.start, range.end).map((ymd) => ({
     label: String(Number(ymd.slice(8, 10))),
@@ -56,6 +80,12 @@ export default async function DashboardPage({
   return (
     <div className="space-y-5">
       <MonthPicker month={month} />
+      <FlowToggle basePath="/dashboard" month={month} mode={flow} />
+      {flow === 'operational' ? (
+        <p className="rounded-xl bg-muted/60 px-3 py-2 text-[11px] text-muted-foreground">
+          Mode operasional tidak menghitung uang masuk dari pinjaman dan angsuran/pelunasan.
+        </p>
+      ) : null}
       <ScanReceiptButton className="lg:hidden" />
       <QuickActions className="hidden lg:block" />
 
@@ -78,12 +108,34 @@ export default async function DashboardPage({
           </Link>
         </div>
 
-        <div className="mb-3 flex items-baseline justify-between rounded-2xl border border-border bg-card px-4 py-3.5">
-          <div>
-            <p className="text-xs text-muted-foreground">Total aset</p>
-            <p className="text-2xl font-semibold tabular-nums">{formatIdr(assets.total)}</p>
+        <div className="mb-3 rounded-2xl border border-border bg-card px-4 py-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Kekayaan bersih</p>
+              <p className="text-2xl font-semibold tabular-nums">{formatIdr(netWorth)}</p>
+            </div>
+            <p className="pt-1 text-xs text-muted-foreground">
+              {assets.wallets.length} kantong aktif
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground">{assets.wallets.length} kantong aktif</p>
+          <dl className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+            <div className="rounded-xl bg-muted/50 px-2.5 py-1.5">
+              <dt className="text-muted-foreground">Aset</dt>
+              <dd className="mt-0.5 font-semibold tabular-nums">{formatIdr(assets.total)}</dd>
+            </div>
+            <div className="rounded-xl bg-muted/50 px-2.5 py-1.5">
+              <dt className="text-muted-foreground">Piutang</dt>
+              <dd className="mt-0.5 font-semibold tabular-nums text-income">
+                +{formatIdr(debtSummary.receivableOutstanding)}
+              </dd>
+            </div>
+            <div className="rounded-xl bg-muted/50 px-2.5 py-1.5">
+              <dt className="text-muted-foreground">Utang</dt>
+              <dd className="mt-0.5 font-semibold tabular-nums text-expense">
+                −{formatIdr(debtSummary.payableOutstanding)}
+              </dd>
+            </div>
+          </dl>
         </div>
 
         {assets.wallets.length === 0 ? (
@@ -117,8 +169,16 @@ export default async function DashboardPage({
                   {WALLET_TYPE_LABELS[wallet.type] ?? wallet.type}
                 </p>
                 <p className="mt-2 text-base font-semibold tabular-nums">
-                  {formatIdr(wallet.balance)}
+                  {wallet.type === 'credit'
+                    ? formatIdr(Math.max(-wallet.balance, 0))
+                    : formatIdr(wallet.balance)}
                 </p>
+                {wallet.type === 'credit' ? (
+                  <p className="text-[10px] text-muted-foreground">
+                    {wallet.creditLimit ? `Limit ${formatIdr(wallet.creditLimit)}` : 'Tagihan'}
+                    {wallet.dueDay ? ` · jatuh tempo tgl ${wallet.dueDay}` : ''}
+                  </p>
+                ) : null}
               </Link>
             ))}
           </div>
@@ -165,6 +225,107 @@ export default async function DashboardPage({
           </div>
         )}
       </section>
+
+      <UpcomingCard items={upcoming} />
+
+      {activeGoals.length > 0 ? (
+        <section>
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold">Tujuan tabungan</h2>
+            <Link href="/goals" className="text-xs font-medium text-primary hover:underline">
+              Lihat semua
+            </Link>
+          </div>
+          <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
+            {activeGoals.map((goal) => (
+              <div key={goal.id}>
+                <div className="flex items-baseline justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate font-medium">{goal.name}</span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                    {formatIdr(Math.max(goal.saved, 0))} / {formatIdr(goal.targetAmount)}
+                  </span>
+                </div>
+                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={cn(
+                      'h-full rounded-full',
+                      goal.ratio >= 1 ? 'bg-income' : 'bg-primary',
+                    )}
+                    style={{ width: `${Math.min(Math.round(goal.ratio * 100), 100)}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {goal.ratio >= 1
+                    ? 'Target tercapai'
+                    : `Sisa ${formatIdr(goal.remaining)}${
+                        goal.monthlyNeeded !== null
+                          ? ` · ±${formatIdr(goal.monthlyNeeded)}/bulan`
+                          : ''
+                      }`}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {monthlyBudget ? (
+        <section>
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold">Budget bulan ini</h2>
+            <Link href="/settings#budget" className="text-xs font-medium text-primary hover:underline">
+              Atur
+            </Link>
+          </div>
+          <div className="rounded-2xl border border-border bg-card p-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-sm font-medium tabular-nums">
+                {formatIdr(monthlyBudget.spent)}{' '}
+                <span className="font-normal text-muted-foreground">
+                  / {formatIdr(monthlyBudget.limit)}
+                </span>
+              </p>
+              <p
+                className={cn(
+                  'shrink-0 text-xs font-medium tabular-nums',
+                  monthlyBudget.over ? 'text-expense' : 'text-muted-foreground',
+                )}
+              >
+                {monthlyBudget.over
+                  ? `Lewat ${formatIdr(monthlyBudget.spent - monthlyBudget.limit)}`
+                  : `Sisa ${formatIdr(monthlyBudget.remaining)}`}
+              </p>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  'h-full rounded-full',
+                  monthlyBudget.over
+                    ? 'bg-expense'
+                    : monthlyBudget.ratio >= 0.8
+                      ? 'bg-primary/70'
+                      : 'bg-primary',
+                )}
+                style={{ width: `${Math.min(Math.round(monthlyBudget.ratio * 100), 100)}%` }}
+              />
+            </div>
+            <div className="mt-2 flex items-baseline justify-between gap-3 text-[11px]">
+              <span className="text-muted-foreground">Sisa aman per hari</span>
+              <span className="font-semibold tabular-nums">
+                {monthlyBudget.over || monthlyBudget.safePerDay === 0
+                  ? '—'
+                  : formatIdr(monthlyBudget.safePerDay)}
+                {!monthlyBudget.over && monthlyBudget.daysLeft > 0 ? (
+                  <span className="font-normal text-muted-foreground">
+                    {' '}
+                    · {monthlyBudget.daysLeft} hari lagi
+                  </span>
+                ) : null}
+              </span>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {budgetProgress.length > 0 ? (
         <section>

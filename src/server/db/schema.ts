@@ -18,7 +18,7 @@ import {
 import { TEMPLATE_FREQUENCIES } from '@/lib/template-schedule';
 import type { TemplateItemLine } from '@/lib/view-types';
 
-export const WALLET_TYPES = ['cash', 'bank', 'ewallet', 'other'] as const;
+export const WALLET_TYPES = ['cash', 'bank', 'ewallet', 'other', 'credit'] as const;
 export const CATEGORY_KINDS = ['income', 'expense'] as const;
 export const TRANSACTION_KINDS = [
   'income',
@@ -53,6 +53,10 @@ export const wallets = pgTable(
     icon: text('icon'),
     sortOrder: bigint('sort_order', { mode: 'number' }).notNull().default(0),
     currency: char('currency', { length: 3 }).notNull().default('IDR'),
+    /** Khusus tipe `credit`: limit, tanggal statement, dan tanggal jatuh tempo. */
+    creditLimit: bigint('credit_limit', { mode: 'number' }),
+    statementDay: smallint('statement_day'),
+    dueDay: smallint('due_day'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -61,7 +65,19 @@ export const wallets = pgTable(
     uniqueIndex('wallets_user_name_uq')
       .on(t.userId, sql`lower(${t.name})`)
       .where(sql`${t.archivedAt} is null`),
-    check('wallets_type_check', sql`${t.type} in ('cash','bank','ewallet','other')`),
+    check(
+      'wallets_type_check',
+      sql`${t.type} in ('cash','bank','ewallet','other','credit')`,
+    ),
+    check('wallets_credit_limit_check', sql`${t.creditLimit} is null or ${t.creditLimit} > 0`),
+    check(
+      'wallets_statement_day_check',
+      sql`${t.statementDay} is null or (${t.statementDay} between 1 and 31)`,
+    ),
+    check(
+      'wallets_due_day_check',
+      sql`${t.dueDay} is null or (${t.dueDay} between 1 and 31)`,
+    ),
   ],
 );
 
@@ -150,6 +166,21 @@ export const budgets = pgTable(
     index('budgets_category_idx').on(t.categoryId),
     check('budgets_amount_check', sql`${t.amount} > 0`),
   ],
+);
+
+/**
+ * Pagu belanja total per bulan (opsional). Budget per kategori tetap disimpan
+ * di `budgets`; baris ini hanya menambah satu angka "pagu bulanan" yang dipakai
+ * untuk menghitung sisa aman per hari.
+ */
+export const budgetSettings = pgTable(
+  'budget_settings',
+  {
+    userId: uuid('user_id').primaryKey(),
+    monthlyBudget: bigint('monthly_budget', { mode: 'number' }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [check('budget_settings_amount_check', sql`${t.monthlyBudget} > 0`)],
 );
 
 /**
@@ -275,6 +306,40 @@ export const transactionTemplates = pgTable(
 );
 
 /**
+ * Tujuan tabungan (mis. dana darurat, liburan). Progres tidak disimpan sebagai
+ * kolom: selalu dihitung dari saldo kantong yang ditautkan, sehingga konsisten
+ * dengan ledger. Satu kantong hanya boleh menjadi sumber satu goal aktif.
+ */
+export const goals = pgTable(
+  'goals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    name: text('name').notNull(),
+    targetAmount: bigint('target_amount', { mode: 'number' }).notNull(),
+    walletId: uuid('wallet_id')
+      .notNull()
+      .references(() => wallets.id),
+    targetDate: timestamp('target_date', { withTimezone: true }),
+    note: text('note'),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('goals_user_idx').on(t.userId),
+    index('goals_wallet_idx').on(t.walletId),
+    uniqueIndex('goals_user_name_uq')
+      .on(t.userId, sql`lower(${t.name})`)
+      .where(sql`${t.archivedAt} is null`),
+    uniqueIndex('goals_active_wallet_uq')
+      .on(t.userId, t.walletId)
+      .where(sql`${t.archivedAt} is null`),
+    check('goals_target_check', sql`${t.targetAmount} > 0`),
+  ],
+);
+
+/**
  * Hutang & piutang (debt). Satu baris = satu perjanjian pinjaman.
  *
  * Alur uangnya selalu dua kantong berbeda, persis seperti kasus nyata
@@ -350,6 +415,74 @@ export const debtPayments = pgTable(
     index('debt_payments_wallet_idx').on(t.walletId),
     index('debt_payments_transaction_idx').on(t.transactionId),
     check('debt_payments_amount_check', sql`${t.amount} > 0`),
+  ],
+);
+
+export const CHANNELS = ['telegram', 'whatsapp'] as const;
+export type Channel = (typeof CHANNELS)[number];
+
+/**
+ * Tautan identitas chat eksternal ke user aplikasi. Hanya chat yang sudah
+ * memverifikasi token (`/start <token>`) yang boleh mencatat transaksi.
+ */
+export const channelLinks = pgTable(
+  'channel_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    channel: text('channel', { enum: CHANNELS }).notNull().default('telegram'),
+    externalChatId: text('external_chat_id').notNull(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('channel_links_chat_uq').on(t.channel, t.externalChatId),
+    uniqueIndex('channel_links_user_channel_uq').on(t.userId, t.channel),
+    index('channel_links_user_idx').on(t.userId),
+    check('channel_links_channel_check', sql`${t.channel} in ('telegram','whatsapp')`),
+  ],
+);
+
+/** Token sekali pakai untuk menautkan chat (kedaluwarsa cepat). */
+export const channelLinkTokens = pgTable(
+  'channel_link_tokens',
+  {
+    token: text('token').primaryKey(),
+    userId: uuid('user_id').notNull(),
+    channel: text('channel', { enum: CHANNELS }).notNull().default('telegram'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('channel_link_tokens_user_idx').on(t.userId)],
+);
+
+/**
+ * Log pesan masuk untuk idempotensi webhook. Telegram bisa mengirim ulang
+ * update yang sama; unique `(channel, external_message_id)` mencegah transaksi
+ * ganda.
+ */
+export const ingestEvents = pgTable(
+  'ingest_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id'),
+    channel: text('channel', { enum: CHANNELS }).notNull().default('telegram'),
+    externalMessageId: text('external_message_id').notNull(),
+    payload: jsonb('payload').$type<unknown>().notNull(),
+    parsed: jsonb('parsed').$type<unknown>(),
+    status: text('status', { enum: ['received', 'processed', 'error', 'ignored'] })
+      .notNull()
+      .default('received'),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('ingest_events_message_uq').on(t.channel, t.externalMessageId),
+    index('ingest_events_user_idx').on(t.userId),
+    check(
+      'ingest_events_status_check',
+      sql`${t.status} in ('received','processed','error','ignored')`,
+    ),
   ],
 );
 

@@ -50,7 +50,28 @@ riwayat dengan filter, rekonsiliasi, laporan, dan ekspor CSV.
 - **Rekonsiliasi**: masukkan saldo riil → selisih dicatat sebagai adjustment.
 - **Pengaturan**: tema (terang/gelap/sistem), kelola kategori, budget, arsip kantong, ekspor CSV,
   keluar, dan **hapus akun beserta seluruh data** (wajib ketik `HAPUS` untuk konfirmasi).
+- **Kekayaan bersih & arus kas operasional**: kartu net worth (aset + piutang − utang) dan
+  toggle **Semua / Operasional** agar pencairan & pelunasan pinjaman tidak menggelembungkan
+  laporan belanja.
+- **Akan datang**: template terjadwal, jatuh tempo pinjaman, dan tagihan kartu kredit dalam
+  14 hari. Template juga diposting oleh cron harian `/api/cron/templates` (tidak bergantung
+  pada aplikasi dibuka).
+- **Budget total bulanan**: pagu di luar pinjaman + angka **sisa aman per hari**; budget per
+  kategori tetap tersedia.
+- **Tujuan tabungan**: target dana darurat/liburan dengan progres dari saldo kantong khusus,
+  perkiraan sisipan per bulan, dan otomatis menolak kartu kredit sebagai kantong tujuan.
+- **Antrean offline**: transaksi baru disimpan di IndexedDB saat sinyal buruk, lalu dikirim
+  otomatis saat online dengan `client_request_id` (tanpa duplikat).
+- **Import CSV & backup JSON**: impor transaksi dengan pratinjau (kantong/kategori baru dibuat
+  otomatis), ekspor backup seluruh data, dan restore yang mengganti data setelah konfirmasi.
+- **Telegram bot**: tautkan chat lewat token di Pengaturan, lalu catat dengan
+  `makan siang 25rb gopay`, `+5jt gaji bca`, atau `tf bca>cash 500rb`. Balasan berisi ringkasan
+  dan saldo kantong.
+- **Kartu kredit / paylater**: limit, tanggal statement, dan jatuh tempo; tagihan = saldo
+  negatif, pembayaran lewat transfer, dan otomatis muncul di "Akan datang".
 - **PWA**: installable + offline shell (`public/sw.js`, manifest berbasis `src/app/manifest.ts`).
+- **Kualitas**: E2E Playwright untuk alur kritis, rate limit mutasi, dan pelaporan error
+  terstruktur (opsional ke Sentry lewat `SENTRY_DSN`).
 - Semua perhitungan tanggal/laporan memakai zona **Asia/Jakarta (WIB)**; uang disimpan sebagai
   integer rupiah (tanpa float).
 
@@ -131,6 +152,45 @@ Cara kerja:
 > Catatan privasi: pada free tier Gemini/OpenRouter, input dapat dipakai penyedia untuk
 > meningkatkan layanan. Untuk struk sensitif, gunakan Ollama lokal. Jangan pernah commit
 > API key ke git — isi lewat `.env`/`.env.local`.
+
+## Telegram bot (Fase 2)
+
+1. Buat bot lewat [@BotFather](https://t.me/BotFather), salin token.
+2. Isi `.env`:
+   ```bash
+   TELEGRAM_BOT_TOKEN=123456:ABC...
+   TELEGRAM_BOT_USERNAME=money_tracker_bot   # tanpa @
+   TELEGRAM_WEBHOOK_SECRET=string-acak-panjang
+   ```
+3. Deploy ke HTTPS, lalu daftarkan webhook (sekali):
+   ```
+   https://api.telegram.org/bot<token>/setWebhook?url=https://<domain>/api/webhooks/telegram&secret_token=<secret>
+   ```
+4. Buka **Pengaturan → Telegram → Buat kode tautan**, lalu kirim `/start <token>` ke bot.
+   Kode berlaku 15 menit dan langsung hangus setelah dipakai.
+
+Contoh pesan:
+
+```
+makan siang 25rb gopay
++5jt gaji bca
+tf bca>cash 500rb
+```
+
+Perintah `/saldo` menampilkan saldo kantong, `/help` contoh format. Pesan dari chat yang
+belum tertaut ditolak. Idempotensi memakai `ingest_events` (`external_message_id`), jadi
+retry webhook Telegram tidak membuat transaksi ganda. Untuk menguji lokal tanpa HTTPS,
+pakai tunnel (mis. ngrok) atau jalankan tes `npm test` yang menguji parser + handler.
+
+## Cron & backup
+
+- `vercel.json` menjadwalkan `/api/cron/templates` setiap **17:00 UTC (00:00 WIB)** untuk
+  memposting template jatuh tempo semua user dan membersihkan token Telegram kedaluwarsa.
+- Isi `CRON_SECRET`; Vercel Cron mengirim `Authorization: Bearer <secret>`. Manual:
+  `curl -H "Authorization: Bearer <secret>" https://<domain>/api/cron/templates`.
+- **Pengaturan → Data** menyediakan ekspor CSV, ekspor backup JSON (seluruh data), impor CSV
+  dengan pratinjau, dan restore JSON. Restore **mengganti** seluruh data akun dan wajib
+  mengetik `PULIHKAN`.
 
 ## Mode Supabase (multi-user / produksi)
 
@@ -219,7 +279,9 @@ Untuk uji login dari HP di jaringan lokal, tambahkan juga `http://<IP-komputer>:
 | `npm run dev:lan` | Dev server terikat `0.0.0.0` untuk diakses dari HP. |
 | `npm run build` / `npm start` | Build & jalankan produksi. |
 | `npm run lint` | ESLint. |
-| `npm test` | Vitest: service layer (transfer atomik, idempotensi, batas bulan WIB, invariant saldo) + unit money/dates. |
+| `npm test` | Vitest: service layer (transfer atomik, idempotensi, batas bulan WIB, invariant saldo, goal, backup, Telegram) + unit money/dates/rate limit. |
+| `npm run test:e2e` | Playwright: build produksi lalu uji alur kritis (dashboard, buat kantong, catat transaksi, laporan). |
+| `npm run test:e2e:install` | Unduh browser Chromium untuk Playwright (sekali per mesin). |
 | `npm run db:generate` | Generate migrasi Drizzle dari `src/server/db/schema.ts`. |
 | `npm run db:migrate` | Jalankan migrasi ke `DATABASE_URL` (atau PGlite bila kosong). |
 | `npm run db:seed` | Seed kategori default (juga otomatis dijalankan saat aplikasi pertama dibuka). |
@@ -267,9 +329,11 @@ src/
   components/app/     # AppShell (bottom nav/sidebar), sheet transaksi + numpad, daftar transaksi, dll.
   server/
     db/               # schema Drizzle + client (PGlite ⇄ Postgres) + view wallet_balances
-    services/         # transaksi (ledger), wallet, kategori, item, budget, hutang-piutang, laporan
-    actions/          # Server Actions (validasi Zod + auth + revalidate)
-  lib/                # money (integer), dates (WIB), zod schemas, view types
+    services/         # transaksi, wallet, kategori, item, budget, goal, hutang, laporan,
+                      # template, import/backup, Telegram
+    actions/          # Server Actions (validasi Zod + auth + rate limit + revalidate)
+  lib/                # money (integer), dates (WIB), zod schemas, view types,
+                      # parser Telegram, offline queue, rate limit, observability
 drizzle/              # migrasi SQL (dipakai lokal & Supabase; termasuk RLS)
 tests/                # Vitest + PGlite in-memory
 ```
@@ -305,6 +369,14 @@ Keputusan penting (sesuai PRD):
   hari agar ledger tidak dibanjiri data lama. Transaksinya ditandai `source = 'template'`.
 - **Zona waktu**: batas bulan & tren harian dihitung WIB di SQL
   (`occurred_at + 7 jam` → hari WIB), bukan zona server.
+- **Goal** tidak punya kolom "terkumpul": progres = saldo kantong yang ditautkan, dan satu
+  kantong hanya boleh menjadi sumber satu goal aktif. Kartu kredit tidak boleh dipakai.
+- **Kartu kredit** memakai saldo negatif sebagai tagihan; pemakaian = `expense`, pembayaran =
+  transfer ke kantong kredit. Limit/statement/due hanya metadata, bukan saldo.
+- **Offline queue** menyimpan payload transaksi di IndexedDB dan mengirimnya ke
+  `/api/transactions`; `client_request_id` yang sama membuat retry idempoten.
+- **Rate limit** in-memory membatasi mutasi sensitif per user (transaksi, scan struk, import,
+  restore, tautan Telegram). Di serverless batas berlaku per instance.
 - **RLS** sebagai backstop di Supabase; service layer juga selalu memfilter `user_id`.
 
 ## Deploy (Vercel + Supabase)
@@ -313,6 +385,8 @@ Keputusan penting (sesuai PRD):
 2. Import repo ke Vercel, set env: `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
    `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (atau `NEXT_PUBLIC_SUPABASE_ANON_KEY`), dan
    `SUPABASE_SECRET_KEY` bila ingin fitur hapus akun ikut menghapus user auth.
+   Opsional: `CRON_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`,
+   `TELEGRAM_WEBHOOK_SECRET`, `SENTRY_DSN`.
    - **Wajib pakai Transaction pooler** (Supabase → Connect → *Transaction pooler*, port
      **6543**, host `aws-0-<region>.pooler.supabase.com`). Koneksi *direct*
      (`db.<ref>.supabase.co`) hanya IPv6 dan **tidak bisa dijangkau dari Vercel**.
@@ -325,8 +399,9 @@ Keputusan penting (sesuai PRD):
    `errorCode` dari Postgres seperti `28P01` untuk password salah).
 5. Buka di HP → browser menawarkan "Add to Home screen" (PWA installable).
 
-## Fase 2 (belum dibangun)
+## Fase 2 (Telegram sudah tersedia)
 
-Telegram/WhatsApp ingestion: tabel `channel_links` & `ingest_events`, webhook
-`/api/webhooks/telegram`, parser bertingkat + konfirmasi draft. Schema `transactions` sudah
-menyiapkan kolom `source`, `raw_input`, dan `status` untuk itu.
+Telegram ingestion sudah aktif: tabel `channel_links`, `channel_link_tokens`, dan
+`ingest_events`, webhook `/api/webhooks/telegram`, serta parser deterministik. WhatsApp
+belum dibangun; skema `channel_links` sudah mengenal channel `whatsapp`, dan kolom
+`transactions.source`/`raw_input`/`status` tetap dipakai untuk ingestion berikutnya.

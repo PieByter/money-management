@@ -31,7 +31,7 @@ import {
   type TransactionDetail,
   type TransactionListItem,
 } from '@/server/services/transactions';
-import { errorMessage, revalidateAppData } from './shared';
+import { enforceRateLimit, errorMessage, revalidateAppData } from './shared';
 
 /** Pertahankan jam asli bila tanggal dipilih masih hari yang sama. */
 function occurredAtForEdit(original: Date, ymd?: string | null): Date | undefined {
@@ -45,6 +45,7 @@ export async function createTransactionAction(
 ): Promise<ActionResult<{ id: string }>> {
   try {
     const user = await requireUser();
+    enforceRateLimit(`tx:create:${user.id}`, 60, 60_000);
     const values = simpleTransactionSchema.parse(input);
     const db = await getDb();
     const row = await createTransaction(db, user.id, {
@@ -72,6 +73,7 @@ export async function createTransferAction(
 ): Promise<ActionResult<{ groupId: string }>> {
   try {
     const user = await requireUser();
+    enforceRateLimit(`tx:transfer:${user.id}`, 60, 60_000);
     const values = transferSchema.parse(input);
     const db = await getDb();
     const feeAmount = values.feeAmount ?? 0;
@@ -97,6 +99,7 @@ export async function createTransferAction(
 export async function updateTransactionAction(input: unknown): Promise<ActionResult> {
   try {
     const user = await requireUser();
+    enforceRateLimit(`tx:update:${user.id}`, 120, 60_000);
     const values = updateTransactionSchema.parse(input);
     const db = await getDb();
     const detail = await getTransactionDetail(db, user.id, values.transactionId);
@@ -122,6 +125,7 @@ export async function updateTransactionAction(input: unknown): Promise<ActionRes
 export async function updateTransferAction(input: unknown): Promise<ActionResult> {
   try {
     const user = await requireUser();
+    enforceRateLimit(`tx:update:${user.id}`, 120, 60_000);
     const values = updateTransferSchema.parse(input);
     const db = await getDb();
     const detail = await getTransactionDetail(db, user.id, values.transactionId);

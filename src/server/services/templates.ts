@@ -7,6 +7,7 @@ import {
   type TransactionTemplate,
 } from '../db/schema';
 import { jakartaDateAtNoonUtc, jakartaStartOfDayUtc, jakartaYmd, shiftYmd } from '@/lib/dates';
+import { captureError } from '@/lib/observability';
 import {
   nextRunYmd,
   type TemplateFrequency,
@@ -324,6 +325,14 @@ export async function runDueTemplates(
   userId: string,
   now: Date = new Date(),
 ): Promise<RunDueResult> {
+  return runDueTemplatesInner(db, userId, now);
+}
+
+async function runDueTemplatesInner(
+  db: AppDb,
+  userId: string,
+  now: Date,
+): Promise<RunDueResult> {
   const due = await db
     .select({ id: transactionTemplates.id })
     .from(transactionTemplates)
@@ -385,4 +394,43 @@ export async function runDueTemplates(
   }
 
   return { created, skipped };
+}
+
+export interface RunAllDueResult extends RunDueResult {
+  users: number;
+}
+
+/**
+ * Versi lintas-user untuk cron: cari semua user yang punya template jatuh tempo
+ * lalu proses masing-masing. Satu template/user yang gagal tidak menghentikan
+ * user lain.
+ */
+export async function runDueTemplatesForAll(
+  db: AppDb,
+  now: Date = new Date(),
+): Promise<RunAllDueResult> {
+  const dueUsers = await db
+    .selectDistinct({ userId: transactionTemplates.userId })
+    .from(transactionTemplates)
+    .where(
+      and(
+        ne(transactionTemplates.frequency, 'none'),
+        lte(transactionTemplates.nextRunAt, now),
+      ),
+    );
+
+  let created = 0;
+  let skipped = 0;
+  for (const entry of dueUsers) {
+    try {
+      const result = await runDueTemplatesInner(db, entry.userId, now);
+      created += result.created;
+      skipped += result.skipped;
+    } catch (error) {
+      skipped += 1;
+      captureError(error, { area: 'templates.cron', userId: entry.userId });
+    }
+  }
+
+  return { users: dueUsers.length, created, skipped };
 }

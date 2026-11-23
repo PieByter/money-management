@@ -49,7 +49,14 @@ export default async function WalletDetailPage({
     color: wallet.color,
     balance: wallet.balance,
     archived: Boolean(wallet.archivedAt),
+    creditLimit: wallet.creditLimit,
+    statementDay: wallet.statementDay,
+    dueDay: wallet.dueDay,
   };
+
+  const isCredit = wallet.type === 'credit';
+  const outstanding = Math.max(-wallet.balance, 0);
+  const available = wallet.creditLimit ? Math.max(wallet.creditLimit - outstanding, 0) : null;
 
   return (
     <div className="space-y-4">
@@ -84,7 +91,15 @@ export default async function WalletDetailPage({
             <p className="text-xs text-muted-foreground">
               {WALLET_TYPE_LABELS[wallet.type] ?? wallet.type}
             </p>
-            <p className="text-2xl font-semibold tabular-nums">{formatIdr(wallet.balance)}</p>
+            <p className="text-2xl font-semibold tabular-nums">
+              {isCredit ? formatIdr(outstanding) : formatIdr(wallet.balance)}
+            </p>
+            {isCredit ? (
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Sisa tagihan
+                {available !== null ? ` · tersedia ${formatIdr(available)}` : ''}
+              </p>
+            ) : null}
           </div>
           <div className="ml-auto">
             <ReconcileDialog
@@ -95,6 +110,29 @@ export default async function WalletDetailPage({
           </div>
         </div>
       </div>
+
+      {isCredit ? (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-xl border border-border bg-card px-2 py-2">
+            <p className="text-[10px] text-muted-foreground">Limit</p>
+            <p className="mt-0.5 text-xs font-semibold tabular-nums">
+              {wallet.creditLimit ? formatIdr(wallet.creditLimit) : '—'}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-card px-2 py-2">
+            <p className="text-[10px] text-muted-foreground">Statement</p>
+            <p className="mt-0.5 text-xs font-semibold tabular-nums">
+              {wallet.statementDay ? `Tanggal ${wallet.statementDay}` : '—'}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border bg-card px-2 py-2">
+            <p className="text-[10px] text-muted-foreground">Jatuh tempo</p>
+            <p className="mt-0.5 text-xs font-semibold tabular-nums">
+              {wallet.dueDay ? `Tanggal ${wallet.dueDay}` : '—'}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <section>
         <h2 className="mb-1 px-1 text-sm font-semibold">Mutasi kantong</h2>

@@ -525,6 +525,64 @@ describe('batas bulan WIB dan laporan', () => {
     expect(trend[2].expense).toBe(25_000);
   });
 
+  it('mode operasional mengecualikan arus pinjaman', async () => {
+    const userId = await newUser();
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+
+    await createTransaction(db, userId, {
+      kind: 'income',
+      amount: 1_000_000,
+      walletId: wallet.id,
+      occurredAt: wibAt(2026, 10, 3),
+      tags: ['hutang'],
+      note: 'Pencairan pinjaman',
+    });
+    await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 100_000,
+      walletId: wallet.id,
+      occurredAt: wibAt(2026, 10, 4),
+      tags: ['hutang'],
+      note: 'Angsuran',
+    });
+    await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 25_000,
+      walletId: wallet.id,
+      occurredAt: wibAt(2026, 10, 5),
+      note: 'Makan',
+    });
+
+    const all = await getMonthSummary(db, userId, '2026-10');
+    expect(all).toEqual({ income: 1_000_000, expense: 125_000, net: 875_000 });
+
+    const operational = await getMonthSummary(db, userId, '2026-10', { excludeDebt: true });
+    expect(operational).toEqual({ income: 0, expense: 25_000, net: -25_000 });
+
+    const range = monthRangeFromKey('2026-10');
+    const categories = await getCategoryTotals(db, userId, range, { excludeDebt: true });
+    expect(categories.expense).toHaveLength(1);
+    expect(categories.expense[0].total).toBe(25_000);
+
+    const trend = await getMonthlyTrend(db, userId, {
+      endMonth: '2026-10',
+      months: 1,
+      excludeDebt: true,
+    });
+    expect(trend[0]).toMatchObject({ income: 0, expense: 25_000 });
+
+    const daily = await getDailyTotals(db, userId, range, { excludeDebt: true });
+    expect(daily).toHaveLength(1);
+    expect(daily[0]).toMatchObject({ ymd: '2026-10-05', expense: 25_000 });
+
+    const tags = await getTagTotals(db, userId, range, { excludeDebt: true });
+    expect(tags.expense).toHaveLength(0);
+    expect(tags.income).toHaveLength(0);
+
+    const allTags = await getTagTotals(db, userId, range);
+    expect(allTags.income[0]).toMatchObject({ tag: 'hutang', total: 1_000_000 });
+  });
+
   it('overview aset = jumlah saldo kantong aktif', async () => {
     // Tanpa seed: fokus pada kantong yang dibuat tes ini.
     const userId = randomUUID();
@@ -845,6 +903,55 @@ describe('budget kategori', () => {
       saveBudget(db, userId, { categoryId: otherMakan.id, amount: 10_000 }),
     ).rejects.toThrow(ServiceError);
     await expect(setBudgetEnabled(db, userId, otherMakan.id, false)).rejects.toThrow(ServiceError);
+  });
+
+  it('pagu bulanan menghitung sisa aman per hari dan mengabaikan pinjaman', async () => {
+    const userId = await newUser();
+    const {
+      clearMonthlyBudget,
+      getMonthlyBudget,
+      getMonthlyBudgetProgress,
+      saveMonthlyBudget,
+    } = await import('@/server/services/budgets');
+    const { jakartaYearMonth, monthKey } = await import('@/lib/dates');
+
+    const wallet = await createWallet(db, userId, { name: uniqueName('Cash'), type: 'cash' });
+    expect(await getMonthlyBudget(db, userId)).toBeNull();
+
+    await saveMonthlyBudget(db, userId, 1_000_000);
+    expect(await getMonthlyBudget(db, userId)).toBe(1_000_000);
+
+    await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 250_000,
+      walletId: wallet.id,
+      occurredAt: new Date(),
+      note: 'Belanja hari ini',
+    });
+    await createTransaction(db, userId, {
+      kind: 'expense',
+      amount: 500_000,
+      walletId: wallet.id,
+      occurredAt: new Date(),
+      tags: ['hutang'],
+      note: 'Angsuran tidak masuk budget',
+    });
+
+    const month = monthKey(jakartaYearMonth());
+    const progress = await getMonthlyBudgetProgress(db, userId, month);
+    expect(progress).not.toBeNull();
+    expect(progress).toMatchObject({
+      limit: 1_000_000,
+      spent: 250_000,
+      remaining: 750_000,
+      over: false,
+    });
+    expect(progress!.daysLeft).toBeGreaterThanOrEqual(1);
+    expect(progress!.safePerDay).toBe(Math.floor(750_000 / progress!.daysLeft));
+
+    await clearMonthlyBudget(db, userId);
+    expect(await getMonthlyBudget(db, userId)).toBeNull();
+    expect(await getMonthlyBudgetProgress(db, userId, month)).toBeNull();
   });
 });
 

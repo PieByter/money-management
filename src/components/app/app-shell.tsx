@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { BarChart3, HandCoins, Home, LayoutTemplate, Plus, ReceiptText, ScanLine, Settings, Wallet } from 'lucide-react';
+import { BarChart3, HandCoins, Home, LayoutTemplate, Plus, ReceiptText, ScanLine, Settings, Target, Wallet } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { OfflineQueueBanner } from './offline-queue-banner';
 import { ThemeToggle } from './theme-toggle';
 import { useTransactionSheet } from './transaction-sheet-provider';
 
@@ -13,6 +14,7 @@ const NAV_ITEMS = [
   { href: '/transactions', label: 'Riwayat', icon: ReceiptText },
   { href: '/templates', label: 'Template', icon: LayoutTemplate },
   { href: '/wallets', label: 'Kantong', icon: Wallet },
+  { href: '/goals', label: 'Tujuan', icon: Target },
   { href: '/debts', label: 'Hutang', icon: HandCoins },
   { href: '/reports', label: 'Laporan', icon: BarChart3 },
 ] as const;
@@ -143,6 +145,7 @@ export function AppShell({
         </header>
 
         <main className="mx-auto w-full max-w-md flex-1 px-4 pb-28 pt-4 lg:max-w-4xl lg:px-8 lg:pb-16 lg:pt-8">
+          <OfflineQueueBanner />
           {children}
         </main>
 

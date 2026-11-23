@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { jakartaYmd } from '@/lib/dates';
 import { formatAmount, formatIdr } from '@/lib/money';
+import { enqueueTransaction, isOffline } from '@/lib/offline-queue';
 import { cn } from '@/lib/utils';
 import type {
   CategoryOption,
@@ -37,9 +38,27 @@ const SEGMENTS: { value: SheetMode; label: string }[] = [
   { value: 'transfer', label: 'Pindah' },
 ];
 
+/**
+ * UUID v4 untuk idempotensi. `crypto.randomUUID` hanya tersedia di secure
+ * context; di LAN/HTTP (mode dev dari HP) kita susun UUID dari getRandomValues
+ * agar tetap lolos validasi server.
+ */
 function newRequestId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
-  return `req-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const webCrypto =
+    typeof crypto !== 'undefined'
+      ? (crypto as Crypto & { randomUUID?: () => string })
+      : null;
+  if (typeof webCrypto?.randomUUID === 'function') return webCrypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (webCrypto) {
+    webCrypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function appendKey(prev: string, key: NumpadKey): string {
@@ -119,7 +138,8 @@ export function TransactionSheet({
     if (editId) {
       setReceiptOrigin(null);
       setLoadingEdit(true);
-      void getTransactionDetailAction(editId).then((result) => {
+      void getTransactionDetailAction(editId)
+        .then((result) => {
         setLoadingEdit(false);
         if (!result.ok) {
           toast.error(result.error);
@@ -154,7 +174,12 @@ export function TransactionSheet({
           setToWalletId(null);
           setCategoryId(transaction.categoryId);
         }
-      });
+        })
+        .catch(() => {
+          setLoadingEdit(false);
+          toast.error('Tidak bisa memuat transaksi. Periksa koneksi internet.');
+          onOpenChange(false);
+        });
       return;
     }
 
@@ -244,6 +269,49 @@ export function TransactionSheet({
       }
     } else if (!fromWalletId) {
       toast.error('Pilih kantong dulu');
+      return;
+    }
+
+    if (isOffline()) {
+      if (editId) {
+        toast.error('Ubah transaksi butuh koneksi internet. Coba lagi setelah online.');
+        return;
+      }
+      const payload =
+        mode === 'transfer'
+          ? {
+              fromWalletId,
+              toWalletId,
+              amount,
+              feeAmount: fee,
+              date: dateYmd,
+              note: cleanNote,
+              clientRequestId: requestId,
+            }
+          : {
+              kind: mode,
+              amount,
+              walletId: fromWalletId,
+              categoryId,
+              date: dateYmd,
+              note: cleanNote,
+              tags: parsedTags,
+              items: cleanLines,
+              clientRequestId: requestId,
+              source: receiptOrigin ? 'receipt' : undefined,
+              rawInput: receiptOrigin?.rawInput ?? null,
+            };
+      const queued = await enqueueTransaction({
+        id: requestId,
+        kind: mode === 'transfer' ? 'transfer' : 'simple',
+        payload,
+      });
+      if (queued) {
+        toast.success('Offline — transaksi masuk antrean dan dikirim saat online');
+        onOpenChange(false);
+      } else {
+        toast.error('Tidak bisa menyimpan antrean offline di browser ini');
+      }
       return;
     }
 

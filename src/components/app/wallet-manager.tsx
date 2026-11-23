@@ -44,6 +44,9 @@ export interface WalletTarget {
   color: string | null;
   balance: number;
   archived: boolean;
+  creditLimit?: number | null;
+  statementDay?: number | null;
+  dueDay?: number | null;
 }
 
 export function WalletFormDialog({
@@ -56,6 +59,9 @@ export function WalletFormDialog({
   initial?: WalletTarget | null;
 }) {
   const [openingText, setOpeningText] = useState('');
+  const [creditLimitText, setCreditLimitText] = useState('');
+  const [statementDay, setStatementDay] = useState('');
+  const [dueDay, setDueDay] = useState('');
   const [busy, setBusy] = useState(false);
   const form = useForm<WalletFormValues>({
     resolver: zodResolver(walletFormSchema),
@@ -68,6 +74,9 @@ export function WalletFormDialog({
   useEffect(() => {
     if (!open) return;
     setOpeningText('');
+    setCreditLimitText(initial?.creditLimit ? formatAmount(initial.creditLimit) : '');
+    setStatementDay(initial?.statementDay ? String(initial.statementDay) : '');
+    setDueDay(initial?.dueDay ? String(initial.dueDay) : '');
     form.reset(
       initial
         ? {
@@ -81,6 +90,13 @@ export function WalletFormDialog({
   }, [form, initial, open]);
 
   async function onSubmit(values: WalletFormValues) {
+    const creditLimit = creditLimitText ? parseAmountInput(creditLimitText) : null;
+    const statement = statementDay ? Number(statementDay) : null;
+    const due = dueDay ? Number(dueDay) : null;
+    if (values.type === 'credit' && creditLimit === null) {
+      toast.error('Isi limit kartu kredit dulu');
+      return;
+    }
     setBusy(true);
     try {
       if (initial) {
@@ -90,6 +106,9 @@ export function WalletFormDialog({
           type: values.type,
           icon: values.icon,
           color: values.color,
+          creditLimit: values.type === 'credit' ? creditLimit : null,
+          statementDay: values.type === 'credit' ? statement : null,
+          dueDay: values.type === 'credit' ? due : null,
         });
         if (result.ok) {
           toast.success('Kantong diperbarui');
@@ -107,6 +126,9 @@ export function WalletFormDialog({
         icon: values.icon,
         color: values.color,
         openingBalance,
+        creditLimit: values.type === 'credit' ? creditLimit : null,
+        statementDay: values.type === 'credit' ? statement : null,
+        dueDay: values.type === 'credit' ? due : null,
       });
       if (result.ok) {
         toast.success('Kantong dibuat');
@@ -171,7 +193,7 @@ export function WalletFormDialog({
 
           <div className="space-y-1.5">
             <Label>Jenis</Label>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-5 gap-1.5">
               {WALLET_TYPE_OPTIONS.map((option) => (
                 <button
                   key={option.value}
@@ -189,6 +211,53 @@ export function WalletFormDialog({
               ))}
             </div>
           </div>
+
+          {type === 'credit' ? (
+            <div className="space-y-2 rounded-xl border border-border bg-muted/30 p-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="wallet-limit">Limit kartu</Label>
+                <Input
+                  id="wallet-limit"
+                  inputMode="numeric"
+                  placeholder="10.000.000"
+                  value={creditLimitText}
+                  onChange={(event) =>
+                    setCreditLimitText(event.target.value.replace(/\D/g, '').slice(0, 15))
+                  }
+                  className="text-right tabular-nums"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="wallet-statement">Tanggal statement</Label>
+                  <Input
+                    id="wallet-statement"
+                    type="number"
+                    min={1}
+                    max={31}
+                    placeholder="25"
+                    value={statementDay}
+                    onChange={(event) => setStatementDay(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="wallet-due">Tanggal jatuh tempo</Label>
+                  <Input
+                    id="wallet-due"
+                    type="number"
+                    min={1}
+                    max={31}
+                    placeholder="5"
+                    value={dueDay}
+                    onChange={(event) => setDueDay(event.target.value)}
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Pemakaian dicatat sebagai pengeluaran; pembayaran sebagai transfer ke kantong ini.
+              </p>
+            </div>
+          ) : null}
 
           <div className="space-y-1.5">
             <Label>Ikon</Label>
@@ -231,7 +300,9 @@ export function WalletFormDialog({
 
           {!initial ? (
             <div className="space-y-1.5">
-              <Label htmlFor="wallet-opening">Saldo awal (opsional)</Label>
+              <Label htmlFor="wallet-opening">
+                {type === 'credit' ? 'Tagihan awal (opsional)' : 'Saldo awal (opsional)'}
+              </Label>
               <Input
                 id="wallet-opening"
                 inputMode="numeric"
@@ -244,7 +315,9 @@ export function WalletFormDialog({
               />
               {openingText ? (
                 <p className="text-xs text-muted-foreground">
-                  Dicatat sebagai penyesuaian: Rp {formatAmount(Number(openingText))}
+                  {type === 'credit'
+                    ? `Dicatat sebagai tagihan: Rp ${formatAmount(Number(openingText))}`
+                    : `Dicatat sebagai penyesuaian: Rp ${formatAmount(Number(openingText))}`}
                 </p>
               ) : null}
             </div>
@@ -336,7 +409,7 @@ export function WalletActionsMenu({ wallet }: { wallet: WalletTarget }) {
     }
     if (!result.data.deleted) {
       toast.error(
-        'Kantong masih dipakai transaksi atau catatan pinjaman — gunakan arsipkan agar riwayat tetap utuh.',
+        'Kantong masih dipakai transaksi, pinjaman, atau tujuan tabungan — gunakan arsipkan agar riwayat tetap utuh.',
       );
       return;
     }
@@ -351,6 +424,9 @@ export function WalletActionsMenu({ wallet }: { wallet: WalletTarget }) {
               type: wallet.type,
               icon: wallet.icon,
               color: wallet.color,
+              creditLimit: wallet.creditLimit ?? null,
+              statementDay: wallet.statementDay ?? null,
+              dueDay: wallet.dueDay ?? null,
             });
             if (!restored.ok) {
               toast.error(restored.error);

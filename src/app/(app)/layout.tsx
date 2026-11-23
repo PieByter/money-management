@@ -1,3 +1,4 @@
+import { captureError } from '@/lib/observability';
 import { requireUser } from '@/server/auth';
 import { getDb } from '@/server/db/client';
 import { listCategories } from '@/server/services/categories';
@@ -7,6 +8,7 @@ import { getFrequentItems } from '@/server/services/items';
 import { listTemplates, runDueTemplates } from '@/server/services/templates';
 import { listWallets } from '@/server/services/wallets';
 import { AppShell } from '@/components/app/app-shell';
+import { OfflineQueueProvider } from '@/components/app/offline-queue-provider';
 import { TransactionSheetProvider } from '@/components/app/transaction-sheet-provider';
 import type { CategoryOption, SheetData } from '@/lib/view-types';
 import { isReceiptAiConfigured } from '@/server/ai/receipt';
@@ -38,7 +40,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   try {
     await runDueTemplates(db, user.id);
   } catch (error) {
-    console.error('[templates] gagal memproses jadwal', error);
+    captureError(error, { area: 'templates.layout', userId: user.id });
   }
 
   const [
@@ -93,7 +95,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <TransactionSheetProvider data={sheetData} receiptAiReady={isReceiptAiConfigured()}>
-      <AppShell userEmail={user.email}>{children}</AppShell>
+      <OfflineQueueProvider>
+        <AppShell userEmail={user.email}>{children}</AppShell>
+      </OfflineQueueProvider>
     </TransactionSheetProvider>
   );
 }
